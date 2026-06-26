@@ -16,6 +16,13 @@ env/
 instance/
 *.db
 
+# Node
+node_modules/
+frontend/dist/
+
+# React build output (served by Flask)
+static/
+
 # IDE
 .vscode/
 .idea/

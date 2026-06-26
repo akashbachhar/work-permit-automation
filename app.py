@@ -1,8 +1,8 @@
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, jsonify, send_from_directory
 import sqlite3
 import os
 
-app = Flask(__name__, static_folder="static", template_folder="templates")
+app = Flask(__name__, static_folder="static", static_url_path="")
 DATABASE = os.path.join(app.instance_path, "plant_maintenance.db")
 
 
@@ -26,9 +26,17 @@ def init_db():
     conn.close()
 
 
-@app.route("/")
-def index():
-    return render_template("index.html")
+@app.route("/api/health")
+def health():
+    return jsonify({"status": "ok"})
+
+
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def serve_react(path):
+    if path and os.path.exists(os.path.join(app.static_folder, path)):
+        return send_from_directory(app.static_folder, path)
+    return send_from_directory(app.static_folder, "index.html")
 
 
 if __name__ == "__main__":
