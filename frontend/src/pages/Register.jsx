@@ -32,7 +32,7 @@ export default function Register() {
   }
 
   return (
-    <div className="auth-page">
+    <div className="auth-container">
       <form className="auth-form" onSubmit={handleSubmit}>
         <h2>Create Account</h2>
         {error && <div className="auth-error">{error}</div>}

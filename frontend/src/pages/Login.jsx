@@ -25,7 +25,7 @@ export default function Login() {
   }
 
   return (
-    <div className="auth-page">
+    <div className="auth-container">
       <form className="auth-form" onSubmit={handleSubmit}>
         <h2>Sign In</h2>
         {error && <div className="auth-error">{error}</div>}
