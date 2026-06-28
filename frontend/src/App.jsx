@@ -5,6 +5,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
+import AdminPage from './pages/admin/AdminPage'
 import './App.css'
 
 function GuestRoute({ children }) {
@@ -57,9 +58,17 @@ function AppLayout() {
 function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <AppLayout />
-      </AuthProvider>
+      <Routes>
+        <Route path="/admin/*" element={<AdminPage />} />
+        <Route
+          path="/*"
+          element={
+            <AuthProvider>
+              <AppLayout />
+            </AuthProvider>
+          }
+        />
+      </Routes>
     </BrowserRouter>
   )
 }

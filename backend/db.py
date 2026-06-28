@@ -25,6 +25,19 @@ def init_db():
             title TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+        CREATE TABLE IF NOT EXISTS admins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL
+        );
     """)
     conn.commit()
+
+    import bcrypt
+    existing = conn.execute("SELECT id FROM admins WHERE username = 'admin'").fetchone()
+    if not existing:
+        pw_hash = bcrypt.hashpw("admin@123".encode(), bcrypt.gensalt()).decode()
+        conn.execute("INSERT INTO admins (username, password_hash) VALUES (?, ?)", ("admin", pw_hash))
+        conn.commit()
+
     conn.close()
