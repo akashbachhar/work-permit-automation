@@ -132,3 +132,89 @@ def delete_user(user_id):
     conn.commit()
     conn.close()
     return jsonify({"message": "User deleted"})
+
+
+@admin_bp.route("/order-types")
+@admin_required
+def get_order_types():
+    from backend.routes.work_order_routes import ORDER_TYPES
+    types = [{"code": k, "description": v} for k, v in ORDER_TYPES.items()]
+    return jsonify({"order_types": types})
+
+
+@admin_bp.route("/work-orders")
+@admin_required
+def list_work_orders():
+    conn = get_db()
+    orders = conn.execute(
+        "SELECT id, order_no, order_type, order_type_desc, priority, description, created_by, created_at FROM work_orders ORDER BY id DESC"
+    ).fetchall()
+    conn.close()
+    return jsonify({"work_orders": [dict(o) for o in orders]})
+
+
+@admin_bp.route("/work-orders/<int:order_id>", methods=["DELETE"])
+@admin_required
+def delete_work_order(order_id):
+    conn = get_db()
+    conn.execute("DELETE FROM work_orders WHERE id = ?", (order_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "Work order deleted"})
+
+
+@admin_bp.route("/work-orders", methods=["POST"])
+@admin_required
+def create_work_order():
+    from backend.routes.work_order_routes import ORDER_TYPES, BASE_ORDER_NO
+
+    data = request.get_json()
+    order_type = (data.get("order_type") or "").strip()
+    priority = (data.get("priority") or "").strip()
+    description = (data.get("description") or "").strip()
+
+    if not order_type or not priority or not description:
+        return jsonify({"error": "All fields are required"}), 400
+    if order_type not in ORDER_TYPES:
+        return jsonify({"error": "Invalid order type"}), 400
+    if priority not in ("Safety Critical", "High", "Medium", "Low"):
+        return jsonify({"error": "Invalid priority"}), 400
+
+    conn = get_db()
+    last = conn.execute("SELECT order_no FROM work_orders ORDER BY id DESC LIMIT 1").fetchone()
+    next_no = str(int(last["order_no"]) + 1) if last else str(BASE_ORDER_NO)
+
+    conn.execute(
+        "INSERT INTO work_orders (order_no, order_type, order_type_desc, priority, description, created_by) VALUES (?, ?, ?, ?, ?, ?)",
+        (next_no, order_type, ORDER_TYPES[order_type], priority, description, f"admin:{request.admin['username']}"),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"order_no": next_no, "message": "Work order created"}), 201
+
+
+@admin_bp.route("/work-orders/<int:order_id>", methods=["PUT"])
+@admin_required
+def update_work_order(order_id):
+    from backend.routes.work_order_routes import ORDER_TYPES
+
+    data = request.get_json()
+    order_type = (data.get("order_type") or "").strip()
+    priority = (data.get("priority") or "").strip()
+    description = (data.get("description") or "").strip()
+
+    if not order_type or not priority or not description:
+        return jsonify({"error": "All fields are required"}), 400
+    if order_type not in ORDER_TYPES:
+        return jsonify({"error": "Invalid order type"}), 400
+    if priority not in ("Safety Critical", "High", "Medium", "Low"):
+        return jsonify({"error": "Invalid priority"}), 400
+
+    conn = get_db()
+    conn.execute(
+        "UPDATE work_orders SET order_type = ?, order_type_desc = ?, priority = ?, description = ? WHERE id = ?",
+        (order_type, ORDER_TYPES[order_type], priority, description, order_id),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "Work order updated"})

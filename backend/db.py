@@ -30,6 +30,16 @@ def init_db():
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS work_orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_no TEXT UNIQUE NOT NULL,
+            order_type TEXT NOT NULL,
+            order_type_desc TEXT NOT NULL,
+            priority TEXT NOT NULL,
+            description TEXT NOT NULL,
+            created_by TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
     """)
     conn.commit()
 
