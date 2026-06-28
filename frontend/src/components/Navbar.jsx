@@ -9,13 +9,13 @@ export default function Navbar() {
 
   return (
     <nav className="navbar">
-      <div className="navbar-left">
+      <Link to="/" className="navbar-left">
         <img src={logo} alt="HPCL Logo" className="navbar-logo" />
         <div className="navbar-title">
           <h1>Plant Maintenance Dashboard</h1>
           <p>Hindustan Petroleum Corporation Limited</p>
         </div>
-      </div>
+      </Link>
       <div className="navbar-right">
         {user ? (
           <>
