@@ -16,19 +16,45 @@ def init_db():
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            designation TEXT NOT NULL,
             email TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         CREATE TABLE IF NOT EXISTS work_permits (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            permit_no TEXT UNIQUE NOT NULL,
+            work_order_no TEXT NOT NULL,
+            permit_subtype TEXT NOT NULL,
+            shift TEXT NOT NULL,
+            location_lat REAL NOT NULL,
+            location_lng REAL NOT NULL,
+            exact_location TEXT NOT NULL,
+            num_workmen INTEGER NOT NULL,
+            partner_no TEXT NOT NULL,
+            partner_name TEXT NOT NULL,
+            gas_o2 REAL,
+            gas_lel REAL,
+            gas_co REAL,
+            gas_h2s REAL,
+            checklist_done TEXT,
+            checklist_not_required TEXT,
+            renewal_dates TEXT,
+            created_by TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            valid_until TIMESTAMP
         );
         CREATE TABLE IF NOT EXISTS admins (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS partners (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            partner_no TEXT UNIQUE NOT NULL,
+            partner_name TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         CREATE TABLE IF NOT EXISTS work_orders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,5 +75,19 @@ def init_db():
         pw_hash = bcrypt.hashpw("admin@123".encode(), bcrypt.gensalt()).decode()
         conn.execute("INSERT INTO admins (username, password_hash) VALUES (?, ?)", ("admin", pw_hash))
         conn.commit()
+
+    default_partners = [
+        ("50007134", "K.J.ELECTRICALS"),
+        ("50051492", "AMBETRONICS ENGG.PVT.LTD"),
+        ("50006659", "S.P.ENGINEERING WORKS"),
+        ("50021792", "J S ENTERPRISES"),
+        ("50035312", "SVS SERVICES"),
+        ("50043660", "MAPTEC SURVEY CONSULTANCY PVT. LTD."),
+    ]
+    for pno, pname in default_partners:
+        existing = conn.execute("SELECT id FROM partners WHERE partner_no = ?", (pno,)).fetchone()
+        if not existing:
+            conn.execute("INSERT INTO partners (partner_no, partner_name) VALUES (?, ?)", (pno, pname))
+    conn.commit()
 
     conn.close()

@@ -10,9 +10,9 @@ from backend.routes import all_blueprints
 def create_app():
     app = Flask(
         __name__,
-        static_folder=os.path.join(os.path.dirname(__file__), "..", "static"),
+        static_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "static"),
         static_url_path="",
-        instance_path=os.path.join(os.path.dirname(__file__), "..", "instance"),
+        instance_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "instance"),
     )
     app.config.from_object(Config)
     CORS(app, supports_credentials=True)

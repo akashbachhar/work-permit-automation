@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { GoogleMap, useJsApiLoader } from '@react-google-maps/api'
+import { GoogleMap } from '@react-google-maps/api'
+import { useGoogleMaps } from '../context/GoogleMapsContext'
 
 const center = { lat: 12.978935582489221, lng: 74.83626455299897 }
 
@@ -20,10 +21,7 @@ const mapOptions = {
 
 export default function MapView() {
   const [mapKey, setMapKey] = useState(0)
-
-  const { isLoaded } = useJsApiLoader({
-    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
-  })
+  const isLoaded = useGoogleMaps()
 
   if (!isLoaded) {
     return (

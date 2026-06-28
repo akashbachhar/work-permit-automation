@@ -29,7 +29,7 @@ def auth_required(f):
             return jsonify({"error": "Invalid token"}), 401
 
         conn = get_db()
-        user = conn.execute("SELECT id, email FROM users WHERE id = ?", (int(payload["sub"]),)).fetchone()
+        user = conn.execute("SELECT id, name, designation, email FROM users WHERE id = ?", (int(payload["sub"]),)).fetchone()
         conn.close()
         if not user:
             return jsonify({"error": "User not found"}), 401

@@ -2,12 +2,16 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import CreateWorkOrderModal from './CreateWorkOrderModal'
+import CreateWorkPermitModal from './CreateWorkPermitModal'
+import RenewWorkPermitModal from './RenewWorkPermitModal'
 import logo from '../assets/logo.png'
 
 export default function Navbar() {
   const { user, logout } = useAuth()
   const [permitOpen, setPermitOpen] = useState(false)
   const [showWorkOrder, setShowWorkOrder] = useState(false)
+  const [showNewPermit, setShowNewPermit] = useState(false)
+  const [showRenewPermit, setShowRenewPermit] = useState(false)
 
   return (
     <>
@@ -35,12 +39,12 @@ export default function Navbar() {
                 </button>
                 {permitOpen && (
                   <div className="dropdown-menu" onMouseLeave={() => setPermitOpen(false)}>
-                    <Link to="/work-permit/new" onClick={() => setPermitOpen(false)}>New Work Permit</Link>
-                    <Link to="/work-permit/renew" onClick={() => setPermitOpen(false)}>Renew Work Permit</Link>
+                    <button onClick={() => { setPermitOpen(false); setShowNewPermit(true) }}>New Work Permit</button>
+                    <button onClick={() => { setPermitOpen(false); setShowRenewPermit(true) }}>Renew Approval</button>
                   </div>
                 )}
               </div>
-              <span className="navbar-email">{user.email}</span>
+              <span className="navbar-email">{user.name}</span>
               <button className="btn-nav" onClick={logout}>Logout</button>
             </>
           ) : (
@@ -52,6 +56,8 @@ export default function Navbar() {
         </div>
       </nav>
       {showWorkOrder && <CreateWorkOrderModal onClose={() => setShowWorkOrder(false)} />}
+      {showNewPermit && <CreateWorkPermitModal onClose={() => setShowNewPermit(false)} />}
+      {showRenewPermit && <RenewWorkPermitModal onClose={() => setShowRenewPermit(false)} />}
     </>
   )
 }

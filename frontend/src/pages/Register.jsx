@@ -2,7 +2,14 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
+const DESIGNATIONS = [
+  'Officer', 'Senior Officer', 'Assistant Manager', 'Manager',
+  'Senior Manager', 'Chief Manager', 'Deputy General Manager', 'General Manager',
+]
+
 export default function Register() {
+  const [name, setName] = useState('')
+  const [designation, setDesignation] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -22,7 +29,7 @@ export default function Register() {
 
     setSubmitting(true)
     try {
-      await register(email, password)
+      await register(name, designation, email, password)
       navigate('/')
     } catch (err) {
       setError(err.message)
@@ -36,6 +43,25 @@ export default function Register() {
       <form className="auth-form" onSubmit={handleSubmit}>
         <h2>Create Account</h2>
         {error && <div className="auth-error">{error}</div>}
+        <label>
+          Name
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            autoComplete="name"
+          />
+        </label>
+        <label>
+          Designation
+          <select value={designation} onChange={(e) => setDesignation(e.target.value)} required>
+            <option value="">Select designation</option>
+            {DESIGNATIONS.map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+        </label>
         <label>
           Email
           <input

@@ -61,7 +61,7 @@ def create_work_order():
 
     conn.execute(
         "INSERT INTO work_orders (order_no, order_type, order_type_desc, priority, description, created_by) VALUES (?, ?, ?, ?, ?, ?)",
-        (next_no, order_type, ORDER_TYPES[order_type], priority, description, request.user["email"]),
+        (next_no, order_type, ORDER_TYPES[order_type], priority, description, request.user["name"]),
     )
     conn.commit()
     conn.close()

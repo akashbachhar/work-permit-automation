@@ -119,7 +119,7 @@ def change_credentials():
 @admin_required
 def list_users():
     conn = get_db()
-    users = conn.execute("SELECT id, email, password_hash, created_at FROM users ORDER BY id").fetchall()
+    users = conn.execute("SELECT id, name, designation, email, password_hash, created_at FROM users ORDER BY id").fetchall()
     conn.close()
     return jsonify({"users": [dict(u) for u in users]})
 
@@ -218,3 +218,147 @@ def update_work_order(order_id):
     conn.commit()
     conn.close()
     return jsonify({"message": "Work order updated"})
+
+
+@admin_bp.route("/partners")
+@admin_required
+def list_partners():
+    conn = get_db()
+    partners = conn.execute("SELECT id, partner_no, partner_name, created_at FROM partners ORDER BY id DESC").fetchall()
+    conn.close()
+    return jsonify({"partners": [dict(p) for p in partners]})
+
+
+@admin_bp.route("/partners", methods=["POST"])
+@admin_required
+def create_partner():
+    data = request.get_json()
+    partner_no = (data.get("partner_no") or "").strip()
+    partner_name = (data.get("partner_name") or "").strip()
+
+    if not partner_no or not partner_name:
+        return jsonify({"error": "Partner number and name are required"}), 400
+
+    conn = get_db()
+    try:
+        conn.execute("INSERT INTO partners (partner_no, partner_name) VALUES (?, ?)", (partner_no, partner_name))
+        conn.commit()
+    except Exception:
+        conn.close()
+        return jsonify({"error": "Partner number already exists"}), 409
+    conn.close()
+    return jsonify({"message": "Partner created"}), 201
+
+
+@admin_bp.route("/partners/<int:partner_id>", methods=["PUT"])
+@admin_required
+def update_partner(partner_id):
+    data = request.get_json()
+    partner_no = (data.get("partner_no") or "").strip()
+    partner_name = (data.get("partner_name") or "").strip()
+
+    if not partner_no or not partner_name:
+        return jsonify({"error": "Partner number and name are required"}), 400
+
+    conn = get_db()
+    conn.execute("UPDATE partners SET partner_no = ?, partner_name = ? WHERE id = ?", (partner_no, partner_name, partner_id))
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "Partner updated"})
+
+
+@admin_bp.route("/partners/<int:partner_id>", methods=["DELETE"])
+@admin_required
+def delete_partner(partner_id):
+    conn = get_db()
+    conn.execute("DELETE FROM partners WHERE id = ?", (partner_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "Partner deleted"})
+
+
+@admin_bp.route("/work-permits")
+@admin_required
+def list_work_permits():
+    conn = get_db()
+    permits = conn.execute(
+        """SELECT id, permit_no, work_order_no, permit_subtype, shift,
+        location_lat, location_lng, exact_location, num_workmen,
+        partner_no, partner_name, gas_o2, gas_lel, gas_co, gas_h2s,
+        checklist_done, checklist_not_required, renewal_dates,
+        created_by, created_at, valid_until FROM work_permits ORDER BY id DESC"""
+    ).fetchall()
+    conn.close()
+    import json
+    results = []
+    for p in permits:
+        d = dict(p)
+        d["checklist_done"] = json.loads(d["checklist_done"] or "[]")
+        d["checklist_not_required"] = json.loads(d["checklist_not_required"] or "[]")
+        d["renewal_dates"] = json.loads(d["renewal_dates"] or "[]")
+        results.append(d)
+    return jsonify({"work_permits": results})
+
+
+@admin_bp.route("/work-permits/<int:permit_id>", methods=["DELETE"])
+@admin_required
+def delete_work_permit(permit_id):
+    conn = get_db()
+    conn.execute("DELETE FROM work_permits WHERE id = ?", (permit_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "Work permit deleted"})
+
+
+@admin_bp.route("/work-permits/<int:permit_id>", methods=["PUT"])
+@admin_required
+def update_work_permit(permit_id):
+    import json
+    data = request.get_json()
+
+    conn = get_db()
+    conn.execute(
+        """UPDATE work_permits SET
+        permit_subtype = ?, shift = ?, location_lat = ?, location_lng = ?,
+        exact_location = ?, num_workmen = ?, partner_no = ?, partner_name = ?,
+        gas_o2 = ?, gas_lel = ?, gas_co = ?, gas_h2s = ?,
+        checklist_done = ?, checklist_not_required = ?
+        WHERE id = ?""",
+        (
+            data["permit_subtype"], data["shift"],
+            data["location_lat"], data["location_lng"],
+            data["exact_location"], data["num_workmen"],
+            data["partner_no"], data["partner_name"],
+            data.get("gas_o2"), data.get("gas_lel"),
+            data.get("gas_co"), data.get("gas_h2s"),
+            json.dumps(data.get("checklist_done", [])),
+            json.dumps(data.get("checklist_not_required", [])),
+            permit_id,
+        ),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "Work permit updated"})
+
+
+@admin_bp.route("/work-permits/<int:permit_id>/renew", methods=["POST"])
+@admin_required
+def renew_work_permit(permit_id):
+    import json, datetime
+    conn = get_db()
+    permit = conn.execute("SELECT renewal_dates, valid_until FROM work_permits WHERE id = ?", (permit_id,)).fetchone()
+    if not permit:
+        conn.close()
+        return jsonify({"error": "Permit not found"}), 404
+
+    dates = json.loads(permit["renewal_dates"] or "[]")
+    now = datetime.datetime.now()
+    dates.append(now.strftime("%Y-%m-%d %H:%M:%S"))
+
+    conn.execute(
+        "UPDATE work_permits SET renewal_dates = ? WHERE id = ?",
+        (json.dumps(dates), permit_id),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "Approval renewed", "renewed_at": now.strftime("%Y-%m-%d %H:%M:%S")})

@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { GoogleMapsProvider } from './context/GoogleMapsContext'
 import Navbar from './components/Navbar'
 import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
@@ -64,7 +65,9 @@ function App() {
           path="/*"
           element={
             <AuthProvider>
-              <AppLayout />
+              <GoogleMapsProvider>
+                <AppLayout />
+              </GoogleMapsProvider>
             </AuthProvider>
           }
         />
