@@ -5,7 +5,6 @@ import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
-import logo from './assets/logo.png'
 import './App.css'
 
 function GuestRoute({ children }) {
@@ -23,13 +22,6 @@ function AppLayout() {
   return (
     <div className="app">
       <Navbar />
-      <div className="hero">
-        <img src={logo} alt="HPCL Logo" className="hero-logo" />
-        <div className="hero-text">
-          <h1>Plant Maintenance Dashboard</h1>
-          <p className="hero-subtitle">Hindustan Petroleum Corporation Limited</p>
-        </div>
-      </div>
       <main className="main">
         <Routes>
           <Route
