@@ -111,6 +111,30 @@ def list_valid_permits():
     return jsonify({"permits": [dict(p) for p in permits]})
 
 
+@work_permit_bp.route("/markers")
+@auth_required
+def get_markers():
+    conn = get_db()
+    permits = conn.execute(
+        """SELECT wp.permit_no, wp.work_order_no, wp.permit_subtype, wp.exact_location,
+        wp.location_lat, wp.location_lng, wp.shift, wp.num_workmen,
+        wp.partner_no, wp.partner_name,
+        wp.created_by, wp.created_at, wp.valid_until, wp.renewal_dates,
+        wo.description AS work_description
+        FROM work_permits wp
+        LEFT JOIN work_orders wo ON wp.work_order_no = wo.order_no
+        ORDER BY wp.id DESC"""
+    ).fetchall()
+    conn.close()
+    import json as j
+    results = []
+    for p in permits:
+        d = dict(p)
+        d["renewal_dates"] = j.loads(d["renewal_dates"] or "[]")
+        results.append(d)
+    return jsonify({"markers": results})
+
+
 @work_permit_bp.route("/<int:permit_id>/renew", methods=["POST"])
 @auth_required
 def renew_permit(permit_id):

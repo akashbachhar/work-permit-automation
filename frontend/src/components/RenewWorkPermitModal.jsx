@@ -31,6 +31,7 @@ export default function RenewWorkPermitModal({ onClose }) {
         permit_no: permit.permit_no,
         renewed_at: data.renewed_at,
       })
+      window.dispatchEvent(new Event('permits-updated'))
     } catch (err) {
       setError(err.message)
     } finally {

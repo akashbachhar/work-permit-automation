@@ -58,21 +58,21 @@ function AppLayout() {
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/admin/*" element={<AdminPage />} />
-        <Route
-          path="/*"
-          element={
-            <AuthProvider>
-              <GoogleMapsProvider>
+    <GoogleMapsProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/admin/*" element={<AdminPage />} />
+          <Route
+            path="/*"
+            element={
+              <AuthProvider>
                 <AppLayout />
-              </GoogleMapsProvider>
-            </AuthProvider>
-          }
-        />
-      </Routes>
-    </BrowserRouter>
+              </AuthProvider>
+            }
+          />
+        </Routes>
+      </BrowserRouter>
+    </GoogleMapsProvider>
   )
 }
 

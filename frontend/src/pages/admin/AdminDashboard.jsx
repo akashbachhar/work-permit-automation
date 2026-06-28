@@ -1,6 +1,208 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { GoogleMap, Marker } from '@react-google-maps/api'
+import { useGoogleMaps } from '../../context/GoogleMapsContext'
 
 const PRIORITIES = ['Safety Critical', 'High', 'Medium', 'Low']
+
+const DEFAULT_DONE = [
+  'AREA CORDONED OFF AND PRECAUTIONARY TAGS/BOARDS PROVIDED',
+  'CHECKED FOR OIL & GAS TRAPPED BEHIND THE LINING IN EQUIPMENT',
+  'CONSIDERED HAZARD FROM OTHER OPERATIONS AND CONCERNED PERSONS INFORMED',
+  'EQUIPMENT BLINDED/ DISCONNECTED/ CLOSED/ ISOLATED/ WEDGED OPEN',
+  'EQUIPMENT ELECTRICALLY ISOLATED AND TAGGED',
+  'EQUIPMENT/ WORK AREA INSPECTED',
+  'GAS TEST',
+  'PROPER VENTILLATION AND LIGHTING PROVIDED',
+  'RUNNING WATER HOSE/ FIRE EXTINGUISHER PROVIDED. FIRE WATER SYSTEM CHARGED',
+  'SEWERS, MANHOLES, CBD, ETC. AND HOT SURFACES NEARBY COVERED',
+  'SHIELD PROVIDED AGAINST SPARKS',
+  'STANDBY PERSONNEL PROVIDED FROM PROCESS / MAINT / CONTRACTOR',
+  'SURROUNDING AREA CHECKED, CLEANED AND COVERED',
+]
+
+const DEFAULT_NOT_REQUIRED = [
+  'EQUIPMENT PROPERLY DRAINED AND DEPRESSURIZED',
+  'EQUIPMENT PROPERLY STEAMED / PURGED',
+  'EQUIPMENT WATER FLUSHED',
+  'IRON SULPHIDE REMOVED/ KEPT WET',
+  'PORTABLE EQUIPMENT/NOZZLES PROPERLY GROUNDED',
+  'PROPER MEANS OF EXIT / ESCAPE PROVIDED',
+]
+
+const defaultCenter = { lat: 12.975717, lng: 74.834972 }
+const permitMapStyle = { width: '100%', height: '220px', borderRadius: '8px' }
+const permitMapOptions = { mapTypeId: 'satellite', disableDefaultUI: true, zoomControl: true }
+
+function AdminCreatePermitModal({ onClose, onSaved }) {
+  const isLoaded = useGoogleMaps()
+  const [options, setOptions] = useState({ work_orders: [], partners: [], permit_subtypes: [], shifts: [] })
+  const [form, setForm] = useState({
+    work_order_no: '', permit_subtype: '', shift: '',
+    location_lat: null, location_lng: null,
+    exact_location: '', num_workmen: '', partner_no: '',
+    gas_o2: '21', gas_lel: '0', gas_co: '0', gas_h2s: '0',
+  })
+  const [checkDone, setCheckDone] = useState([...DEFAULT_DONE])
+  const [checkNotReq, setCheckNotReq] = useState([...DEFAULT_NOT_REQUIRED])
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [success, setSuccess] = useState(null)
+
+  useEffect(() => {
+    fetch('/api/admin/permit-options', { credentials: 'include' })
+      .then((r) => r.json())
+      .then(setOptions)
+  }, [])
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setError('')
+    setSubmitting(true)
+    try {
+      const res = await fetch('/api/admin/create-permit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          ...form,
+          location_lat: form.location_lat,
+          location_lng: form.location_lng,
+          num_workmen: form.num_workmen ? Number(form.num_workmen) : null,
+          gas_o2: form.gas_o2 !== '' ? Number(form.gas_o2) : null,
+          gas_lel: form.gas_lel !== '' ? Number(form.gas_lel) : null,
+          gas_co: form.gas_co !== '' ? Number(form.gas_co) : null,
+          gas_h2s: form.gas_h2s !== '' ? Number(form.gas_h2s) : null,
+          checklist_done: checkDone,
+          checklist_not_required: checkNotReq,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setSuccess(data.permit_no)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="admin-modal-overlay" onClick={onClose}>
+      <div className="admin-modal admin-modal-wide" onClick={(e) => e.stopPropagation()}>
+        <div className="admin-modal-header">
+          <h3>{success ? 'Permit Created' : 'Create Work Permit'}</h3>
+          <button className="admin-modal-close" onClick={onClose}>&times;</button>
+        </div>
+        {success ? (
+          <div className="admin-modal-body" style={{ alignItems: 'center', gap: '1rem', padding: '2rem' }}>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M8 12l3 3 5-6" />
+            </svg>
+            <span className="mono-cell" style={{ fontSize: '1.3rem' }}>{success}</span>
+            <button onClick={() => { onSaved() }}>Close</button>
+          </div>
+        ) : (
+          <form className="admin-modal-body admin-modal-scroll" onSubmit={handleSubmit}>
+            {error && <div className="admin-error">{error}</div>}
+            <label>
+              Work Order
+              <select value={form.work_order_no} onChange={(e) => setForm({ ...form, work_order_no: e.target.value })} required>
+                <option value="">Select work order</option>
+                {options.work_orders.map((o) => (
+                  <option key={o.order_no} value={o.order_no}>{o.order_no} — {o.description}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Permit Subtype
+              <select value={form.permit_subtype} onChange={(e) => setForm({ ...form, permit_subtype: e.target.value })} required>
+                <option value="">Select subtype</option>
+                {options.permit_subtypes.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
+            <label>
+              Shift
+              <select value={form.shift} onChange={(e) => setForm({ ...form, shift: e.target.value })} required>
+                <option value="">Select shift</option>
+                {options.shifts.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
+            <label>
+              Work Location Coordinate
+              {form.location_lat && (
+                <span style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#4ade80' }}>
+                  {form.location_lat.toFixed(6)}, {form.location_lng.toFixed(6)}
+                </span>
+              )}
+            </label>
+            <div className="admin-permit-map-box">
+              {isLoaded ? (
+                <GoogleMap
+                  mapContainerStyle={permitMapStyle}
+                  center={form.location_lat ? { lat: form.location_lat, lng: form.location_lng } : defaultCenter}
+                  zoom={17}
+                  options={permitMapOptions}
+                  onClick={(e) => setForm({ ...form, location_lat: e.latLng.lat(), location_lng: e.latLng.lng() })}
+                >
+                  {form.location_lat && (
+                    <Marker position={{ lat: form.location_lat, lng: form.location_lng }} />
+                  )}
+                </GoogleMap>
+              ) : (
+                <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f1b2d', borderRadius: '8px', color: '#64748b' }}>Loading map...</div>
+              )}
+            </div>
+            <label>
+              Exact Work Location
+              <input type="text" value={form.exact_location} onChange={(e) => setForm({ ...form, exact_location: e.target.value })} required />
+            </label>
+            <label>
+              No. of Workmen
+              <input type="number" min="1" value={form.num_workmen} onChange={(e) => setForm({ ...form, num_workmen: e.target.value })} required />
+            </label>
+            <label>
+              Partner
+              <select value={form.partner_no} onChange={(e) => setForm({ ...form, partner_no: e.target.value })} required>
+                <option value="">Select partner</option>
+                {options.partners.map((p) => <option key={p.partner_no} value={p.partner_no}>{p.partner_no} — {p.partner_name}</option>)}
+              </select>
+            </label>
+            <fieldset className="admin-gas-group">
+              <legend>Gas Test</legend>
+              <div className="admin-gas-fields">
+                <label>O2 %<input type="number" step="0.1" value={form.gas_o2} onChange={(e) => setForm({ ...form, gas_o2: e.target.value })} /></label>
+                <label>LEL %<input type="number" step="0.1" value={form.gas_lel} onChange={(e) => setForm({ ...form, gas_lel: e.target.value })} /></label>
+                <label>CO %<input type="number" step="0.1" value={form.gas_co} onChange={(e) => setForm({ ...form, gas_co: e.target.value })} /></label>
+                <label>H2S (PPM)<input type="number" step="0.1" value={form.gas_h2s} onChange={(e) => setForm({ ...form, gas_h2s: e.target.value })} /></label>
+              </div>
+            </fieldset>
+            <div className="admin-checklist-section">
+              <h4>Check List</h4>
+              <div className="admin-checklist-columns">
+                <div className="admin-checklist-box admin-cl-done">
+                  <div className="admin-cl-header done-header">Done</div>
+                  {checkDone.map((item) => (
+                    <div key={item} className="admin-cl-chip admin-chip-done" onClick={() => { setCheckDone((p) => p.filter((i) => i !== item)); setCheckNotReq((p) => [...p, item]) }}>{item}</div>
+                  ))}
+                </div>
+                <div className="admin-checklist-box admin-cl-notreq">
+                  <div className="admin-cl-header notreq-header">Not Required</div>
+                  {checkNotReq.map((item) => (
+                    <div key={item} className="admin-cl-chip admin-chip-notreq" onClick={() => { setCheckNotReq((p) => p.filter((i) => i !== item)); setCheckDone((p) => [...p, item]) }}>{item}</div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <button type="submit" disabled={submitting}>
+              {submitting ? 'Creating...' : 'Create Work Permit'}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  )
+}
 
 function WorkOrderModal({ order, orderTypes, onClose, onSaved }) {
   const isEdit = !!order
@@ -74,6 +276,78 @@ function WorkOrderModal({ order, orderTypes, onClose, onSaved }) {
           </label>
           <button type="submit" disabled={submitting}>
             {submitting ? 'Saving...' : isEdit ? 'Update' : 'Create'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+const DESIGNATIONS = [
+  'Officer', 'Senior Officer', 'Assistant Manager', 'Manager',
+  'Senior Manager', 'Chief Manager', 'Deputy General Manager', 'General Manager',
+]
+
+function UserModal({ user, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    name: user.name,
+    designation: user.designation,
+    email: user.email,
+    password: '',
+  })
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setError('')
+    setSubmitting(true)
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(form),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      onSaved()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="admin-modal-overlay" onClick={onClose}>
+      <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="admin-modal-header">
+          <h3>Edit User</h3>
+          <button className="admin-modal-close" onClick={onClose}>&times;</button>
+        </div>
+        <form className="admin-modal-body" onSubmit={handleSubmit}>
+          {error && <div className="admin-error">{error}</div>}
+          <label>
+            Name
+            <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+          </label>
+          <label>
+            Designation
+            <select value={form.designation} onChange={(e) => setForm({ ...form, designation: e.target.value })} required>
+              {DESIGNATIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </label>
+          <label>
+            Email
+            <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+          </label>
+          <label>
+            Password
+            <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Leave blank to keep current" />
+          </label>
+          <button type="submit" disabled={submitting}>
+            {submitting ? 'Saving...' : 'Update'}
           </button>
         </form>
       </div>
@@ -371,6 +645,8 @@ export default function AdminDashboard({ admin, onLogout }) {
   const [modalPartner, setModalPartner] = useState(null)
   const [showPartnerModal, setShowPartnerModal] = useState(false)
   const [viewPermit, setViewPermit] = useState(null)
+  const [editUser, setEditUser] = useState(null)
+  const [showCreatePermit, setShowCreatePermit] = useState(false)
 
   const fetchUsers = () => {
     setLoadingUsers(true)
@@ -499,7 +775,7 @@ export default function AdminDashboard({ admin, onLogout }) {
 
       <div className="admin-content">
         {showCreds && (
-          <div className="admin-card admin-creds-card">
+          <div className="admin-card admin-card-full admin-creds-card">
             <h3>Change Credentials</h3>
             <form onSubmit={handleCredsSubmit}>
               {credsError && <div className="admin-error">{credsError}</div>}
@@ -536,7 +812,7 @@ export default function AdminDashboard({ admin, onLogout }) {
           </div>
         )}
 
-        <div className="admin-card">
+        <div className="admin-card admin-card-full">
           <div className="admin-card-header">
             <h3>Work Orders</h3>
             <div className="admin-card-actions">
@@ -590,10 +866,12 @@ export default function AdminDashboard({ admin, onLogout }) {
           )}
         </div>
 
-        <div className="admin-card">
+        <div className="admin-card admin-card-full">
           <div className="admin-card-header">
             <h3>Work Permits</h3>
-            <button className="admin-btn-icon" onClick={fetchPermits} title="Refresh">
+            <div className="admin-card-actions">
+              <button className="admin-btn-create" onClick={() => setShowCreatePermit(true)}>+ Create</button>
+              <button className="admin-btn-icon" onClick={fetchPermits} title="Refresh">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 2v6h-6" />
                 <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
@@ -601,6 +879,7 @@ export default function AdminDashboard({ admin, onLogout }) {
                 <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
               </svg>
             </button>
+            </div>
           </div>
           {loadingPermits ? (
             <p className="admin-loading">Loading work permits...</p>
@@ -741,10 +1020,9 @@ export default function AdminDashboard({ admin, onLogout }) {
                       <td>{u.email}</td>
                       <td className="hash-cell">{u.password_hash}</td>
                       <td>{new Date(u.created_at).toLocaleDateString()}</td>
-                      <td>
-                        <button className="admin-btn-danger" onClick={() => deleteUser(u.id)}>
-                          Delete
-                        </button>
+                      <td className="action-cell">
+                        <button className="admin-btn-edit" onClick={() => setEditUser(u)}>Edit</button>
+                        <button className="admin-btn-danger" onClick={() => deleteUser(u.id)}>Delete</button>
                       </td>
                     </tr>
                   ))}
@@ -778,6 +1056,21 @@ export default function AdminDashboard({ admin, onLogout }) {
           partners={partners}
           onClose={() => setViewPermit(null)}
           onSaved={() => { setViewPermit(null); fetchPermits() }}
+        />
+      )}
+
+      {showCreatePermit && (
+        <AdminCreatePermitModal
+          onClose={() => setShowCreatePermit(false)}
+          onSaved={() => { setShowCreatePermit(false); fetchPermits() }}
+        />
+      )}
+
+      {editUser && (
+        <UserModal
+          user={editUser}
+          onClose={() => setEditUser(null)}
+          onSaved={() => { setEditUser(null); fetchUsers() }}
         />
       )}
     </div>

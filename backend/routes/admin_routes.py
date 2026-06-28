@@ -134,6 +134,106 @@ def delete_user(user_id):
     return jsonify({"message": "User deleted"})
 
 
+@admin_bp.route("/users/<int:user_id>", methods=["PUT"])
+@admin_required
+def update_user(user_id):
+    data = request.get_json()
+    name = (data.get("name") or "").strip()
+    designation = (data.get("designation") or "").strip()
+    email = (data.get("email") or "").strip().lower()
+    password = (data.get("password") or "").strip()
+
+    if not name or not designation or not email:
+        return jsonify({"error": "Name, designation, and email are required"}), 400
+
+    conn = get_db()
+    if password:
+        if len(password) < 8:
+            conn.close()
+            return jsonify({"error": "Password must be at least 8 characters"}), 400
+        pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+        conn.execute("UPDATE users SET name = ?, designation = ?, email = ?, password_hash = ? WHERE id = ?",
+                     (name, designation, email, pw_hash, user_id))
+    else:
+        conn.execute("UPDATE users SET name = ?, designation = ?, email = ? WHERE id = ?",
+                     (name, designation, email, user_id))
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "User updated"})
+
+
+@admin_bp.route("/permit-options")
+@admin_required
+def get_permit_options():
+    from backend.routes.work_permit_routes import PERMIT_SUBTYPES, SHIFTS
+    conn = get_db()
+    orders = conn.execute("SELECT order_no, description FROM work_orders ORDER BY id DESC").fetchall()
+    partners = conn.execute("SELECT partner_no, partner_name FROM partners ORDER BY partner_name").fetchall()
+    conn.close()
+    return jsonify({
+        "work_orders": [dict(o) for o in orders],
+        "partners": [dict(p) for p in partners],
+        "permit_subtypes": PERMIT_SUBTYPES,
+        "shifts": SHIFTS,
+    })
+
+
+@admin_bp.route("/create-permit", methods=["POST"])
+@admin_required
+def admin_create_permit():
+    import json, datetime
+    from backend.routes.work_permit_routes import PERMIT_SUBTYPES, SHIFTS, BASE_PERMIT_NO
+
+    data = request.get_json()
+    work_order_no = (data.get("work_order_no") or "").strip()
+    permit_subtype = (data.get("permit_subtype") or "").strip()
+    shift = (data.get("shift") or "").strip()
+    location_lat = data.get("location_lat")
+    location_lng = data.get("location_lng")
+    exact_location = (data.get("exact_location") or "").strip()
+    num_workmen = data.get("num_workmen")
+    partner_no = (data.get("partner_no") or "").strip()
+
+    if not all([work_order_no, permit_subtype, shift, exact_location, partner_no]):
+        return jsonify({"error": "All required fields must be filled"}), 400
+    if location_lat is None or location_lng is None:
+        return jsonify({"error": "Work location coordinate is required"}), 400
+    if num_workmen is None or int(num_workmen) < 1:
+        return jsonify({"error": "Number of workmen must be at least 1"}), 400
+
+    conn = get_db()
+    partner = conn.execute("SELECT partner_name FROM partners WHERE partner_no = ?", (partner_no,)).fetchone()
+    if not partner:
+        conn.close()
+        return jsonify({"error": "Invalid partner"}), 400
+
+    last = conn.execute("SELECT permit_no FROM work_permits ORDER BY id DESC LIMIT 1").fetchone()
+    next_no = str(int(last["permit_no"]) + 1) if last else str(BASE_PERMIT_NO)
+
+    now = datetime.datetime.now()
+    valid_until = (now + datetime.timedelta(days=7)).replace(hour=23, minute=59, second=59)
+    renewal_dates = [now.strftime("%Y-%m-%d %H:%M:%S")]
+
+    conn.execute(
+        """INSERT INTO work_permits
+        (permit_no, work_order_no, permit_subtype, shift, location_lat, location_lng,
+         exact_location, num_workmen, partner_no, partner_name,
+         gas_o2, gas_lel, gas_co, gas_h2s, checklist_done, checklist_not_required,
+         renewal_dates, created_by, valid_until)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (next_no, work_order_no, permit_subtype, shift, location_lat, location_lng,
+         exact_location, int(num_workmen), partner_no, partner["partner_name"],
+         data.get("gas_o2"), data.get("gas_lel"), data.get("gas_co"), data.get("gas_h2s"),
+         json.dumps(data.get("checklist_done", [])),
+         json.dumps(data.get("checklist_not_required", [])),
+         json.dumps(renewal_dates),
+         f"admin:{request.admin['username']}", valid_until.strftime("%Y-%m-%d %H:%M:%S")),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"permit_no": next_no, "message": "Work permit created"}), 201
+
+
 @admin_bp.route("/order-types")
 @admin_required
 def get_order_types():

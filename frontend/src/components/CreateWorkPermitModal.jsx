@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { GoogleMap, Marker } from '@react-google-maps/api'
 import { useGoogleMaps } from '../context/GoogleMapsContext'
 
-const defaultCenter = { lat: 12.978935582489221, lng: 74.83626455299897 }
+const defaultCenter = { lat: 12.975717, lng: 74.834972 }
 
 const mapContainerStyle = {
   width: '100%',
@@ -121,6 +121,7 @@ export default function CreateWorkPermitModal({ onClose }) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
       setSuccess(data.permit_no)
+      window.dispatchEvent(new Event('permits-updated'))
     } catch (err) {
       setError(err.message)
     } finally {
@@ -199,7 +200,7 @@ export default function CreateWorkPermitModal({ onClose }) {
                 <GoogleMap
                   mapContainerStyle={mapContainerStyle}
                   center={form.location_lat ? { lat: form.location_lat, lng: form.location_lng } : defaultCenter}
-                  zoom={16}
+                  zoom={17}
                   options={mapOptions}
                   onClick={handleMapClick}
                 >
