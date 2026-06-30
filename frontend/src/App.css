@@ -1477,6 +1477,22 @@
   transition: background 0.2s;
 }
 
+.admin-btn-sop {
+  background: transparent;
+  border: 1px solid #a855f7;
+  color: #a855f7;
+  padding: 0.25rem 0.6rem;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.72rem;
+  transition: background 0.2s;
+}
+
+.admin-btn-sop:hover {
+  background: #a855f7;
+  color: #fff;
+}
+
 .admin-btn-edit:hover {
   background: #3b82f6;
   color: #fff;

@@ -922,6 +922,7 @@ export default function AdminDashboard({ admin, onLogout }) {
                         </td>
                         <td className="action-cell">
                           <button className="admin-btn-edit" onClick={() => setViewPermit(p)}>View/Edit</button>
+                          <button className="admin-btn-sop" onClick={() => {}}>Generate SOP</button>
                           <button className="admin-btn-danger" onClick={() => deletePermit(p.id)}>Delete</button>
                         </td>
                       </tr>

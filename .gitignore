@@ -35,3 +35,7 @@ Thumbs.db
 
 # Environment variables
 .env
+
+# RAG source documents (private, not for version control)
+rag/documents/
+rag/vectorstore/
