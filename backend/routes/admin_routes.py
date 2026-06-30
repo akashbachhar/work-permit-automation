@@ -386,7 +386,7 @@ def list_work_permits():
         location_lat, location_lng, exact_location, num_workmen,
         partner_no, partner_name, gas_o2, gas_lel, gas_co, gas_h2s,
         checklist_done, checklist_not_required, renewal_dates,
-        created_by, created_at, valid_until FROM work_permits ORDER BY id DESC"""
+        created_by, created_at, valid_until, sop_text FROM work_permits ORDER BY id DESC"""
     ).fetchall()
     conn.close()
     import json
@@ -404,6 +404,7 @@ def list_work_permits():
 @admin_required
 def delete_work_permit(permit_id):
     conn = get_db()
+    conn.execute("DELETE FROM sop_translations WHERE permit_id = ?", (permit_id,))
     conn.execute("DELETE FROM work_permits WHERE id = ?", (permit_id,))
     conn.commit()
     conn.close()

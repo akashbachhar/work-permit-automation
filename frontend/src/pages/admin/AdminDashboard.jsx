@@ -626,6 +626,197 @@ function PermitViewModal({ permit, partners, onClose, onSaved }) {
   )
 }
 
+function renderMarkdown(text) {
+  const lines = text.split('\n')
+  const result = []
+  let listBuffer = []
+  let listType = null
+  let k = 0
+
+  const parseInline = (s) => {
+    const parts = s.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g)
+    return parts.map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**')) return <strong key={i}>{part.slice(2, -2)}</strong>
+      if (part.startsWith('*') && part.endsWith('*')) return <em key={i}>{part.slice(1, -1)}</em>
+      return part
+    })
+  }
+
+  const flushList = () => {
+    if (!listBuffer.length) return
+    const Tag = listType === 'ol' ? 'ol' : 'ul'
+    result.push(
+      <Tag key={k++} className="sop-list">
+        {listBuffer.map((item, i) => <li key={i}>{parseInline(item)}</li>)}
+      </Tag>
+    )
+    listBuffer = []
+    listType = null
+  }
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (trimmed.startsWith('### ')) {
+      flushList()
+      result.push(<h4 key={k++} className="sop-h4">{parseInline(trimmed.slice(4))}</h4>)
+    } else if (trimmed.startsWith('## ')) {
+      flushList()
+      result.push(<h3 key={k++} className="sop-h3">{parseInline(trimmed.slice(3))}</h3>)
+    } else if (trimmed.startsWith('# ')) {
+      flushList()
+      result.push(<h2 key={k++} className="sop-h2">{parseInline(trimmed.slice(2))}</h2>)
+    } else if (/^[*-]\s+/.test(trimmed)) {
+      if (listType === 'ol') flushList()
+      listType = 'ul'
+      listBuffer.push(trimmed.replace(/^[*-]\s+/, ''))
+    } else if (/^\d+\.\s+/.test(trimmed)) {
+      if (listType === 'ul') flushList()
+      listType = 'ol'
+      listBuffer.push(trimmed.replace(/^\d+\.\s+/, ''))
+    } else if (trimmed === '') {
+      flushList()
+    } else {
+      flushList()
+      result.push(<p key={k++} className="sop-p">{parseInline(trimmed)}</p>)
+    }
+  }
+  flushList()
+  return result
+}
+
+const SOP_LANGUAGES = [
+  { key: 'hindi', label: 'Hindi' },
+  { key: 'bengali', label: 'Bengali' },
+  { key: 'kannada', label: 'Kannada' },
+]
+
+function SOPModal({ permit, mode, onClose, onGenerated }) {
+  const [sop, setSop] = useState(mode === 'view' ? permit.sop_text : null)
+  const [loading, setLoading] = useState(mode === 'generate')
+  const [error, setError] = useState('')
+  const [copied, setCopied] = useState(false)
+  const [translations, setTranslations] = useState({})
+  const [activeLang, setActiveLang] = useState('english')
+  const [translating, setTranslating] = useState(null)
+
+  useEffect(() => {
+    if (mode !== 'generate') return
+    fetch(`/api/admin/work-permits/${permit.id}/generate-sop`, {
+      method: 'POST',
+      credentials: 'include',
+    })
+      .then(async (res) => {
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error)
+        setSop(data.sop)
+        onGenerated(permit.id, data.sop)
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [permit.id, mode])
+
+  useEffect(() => {
+    if (!sop) return
+    fetch(`/api/admin/work-permits/${permit.id}/sop/translations`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((data) => setTranslations(data.translations || {}))
+  }, [sop, permit.id])
+
+  const displayText = activeLang === 'english' ? sop : translations[activeLang]
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(displayText || '').then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+
+  const handleExportPdf = () => {
+    window.open(`/api/admin/work-permits/${permit.id}/sop/pdf?lang=${activeLang}`, '_blank')
+  }
+
+  const handleTranslate = (language) => {
+    setTranslating(language)
+    setError('')
+    fetch(`/api/admin/work-permits/${permit.id}/sop/translate`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ language }),
+    })
+      .then(async (res) => {
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error)
+        setTranslations((prev) => ({ ...prev, [language]: data.sop }))
+        setActiveLang(language)
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setTranslating(null))
+  }
+
+  return (
+    <div className="admin-modal-overlay" onClick={onClose}>
+      <div className="admin-modal admin-modal-wide sop-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="admin-modal-header">
+          <h3>SOP — Permit {permit.permit_no}</h3>
+          <button className="admin-modal-close" onClick={onClose}>&times;</button>
+        </div>
+        <div className="sop-modal-body">
+          {loading && (
+            <div className="sop-loading">
+              <div className="sop-spinner" />
+              <p>Generating SOP using your HPCL manuals...</p>
+              <p className="sop-loading-sub">This may take up to 60 seconds</p>
+            </div>
+          )}
+          {error && <div className="admin-error">{error}</div>}
+          {sop && (
+            <>
+              <div className="sop-lang-tabs">
+                <button
+                  className={`sop-lang-tab ${activeLang === 'english' ? 'active' : ''}`}
+                  onClick={() => setActiveLang('english')}
+                >
+                  English
+                </button>
+                {SOP_LANGUAGES.map((l) =>
+                  translations[l.key] ? (
+                    <button
+                      key={l.key}
+                      className={`sop-lang-tab ${activeLang === l.key ? 'active' : ''}`}
+                      onClick={() => setActiveLang(l.key)}
+                    >
+                      {l.label}
+                    </button>
+                  ) : (
+                    <button
+                      key={l.key}
+                      className="sop-lang-tab sop-lang-translate"
+                      disabled={translating === l.key}
+                      onClick={() => handleTranslate(l.key)}
+                    >
+                      {translating === l.key ? 'Translating...' : `Translate to ${l.label}`}
+                    </button>
+                  )
+                )}
+              </div>
+              <div className="sop-actions">
+                <button className="admin-btn-edit" onClick={handleCopy}>
+                  {copied ? 'Copied!' : 'Copy'}
+                </button>
+                <button className="admin-btn-pdf" onClick={handleExportPdf}>
+                  Export PDF
+                </button>
+              </div>
+              <div className="sop-content">{renderMarkdown(displayText || '')}</div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function AdminDashboard({ admin, onLogout }) {
   const [users, setUsers] = useState([])
   const [orders, setOrders] = useState([])
@@ -647,6 +838,8 @@ export default function AdminDashboard({ admin, onLogout }) {
   const [viewPermit, setViewPermit] = useState(null)
   const [editUser, setEditUser] = useState(null)
   const [showCreatePermit, setShowCreatePermit] = useState(false)
+  const [sopPermit, setSopPermit] = useState(null)
+  const [sopMode, setSopMode] = useState('generate')
 
   const fetchUsers = () => {
     setLoadingUsers(true)
@@ -922,7 +1115,11 @@ export default function AdminDashboard({ admin, onLogout }) {
                         </td>
                         <td className="action-cell">
                           <button className="admin-btn-edit" onClick={() => setViewPermit(p)}>View/Edit</button>
-                          <button className="admin-btn-sop" onClick={() => {}}>Generate SOP</button>
+                          {p.sop_text ? (
+                            <button className="admin-btn-sop admin-btn-sop-view" onClick={() => { setSopPermit(p); setSopMode('view') }}>View SOP</button>
+                          ) : (
+                            <button className="admin-btn-sop" onClick={() => { setSopPermit(p); setSopMode('generate') }}>Generate SOP</button>
+                          )}
                           <button className="admin-btn-danger" onClick={() => deletePermit(p.id)}>Delete</button>
                         </td>
                       </tr>
@@ -1072,6 +1269,18 @@ export default function AdminDashboard({ admin, onLogout }) {
           user={editUser}
           onClose={() => setEditUser(null)}
           onSaved={() => { setEditUser(null); fetchUsers() }}
+        />
+      )}
+
+      {sopPermit && (
+        <SOPModal
+          key={sopPermit.id}
+          permit={sopPermit}
+          mode={sopMode}
+          onClose={() => setSopPermit(null)}
+          onGenerated={(id, text) => setPermits((prev) =>
+            prev.map((p) => p.id === id ? { ...p, sop_text: text } : p)
+          )}
         />
       )}
     </div>

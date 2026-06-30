@@ -43,7 +43,8 @@ def init_db():
             renewal_dates TEXT,
             created_by TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            valid_until TIMESTAMP
+            valid_until TIMESTAMP,
+            sop_text TEXT
         );
         CREATE TABLE IF NOT EXISTS admins (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,8 +67,23 @@ def init_db():
             created_by TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+        CREATE TABLE IF NOT EXISTS sop_translations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            permit_id INTEGER NOT NULL,
+            language TEXT NOT NULL,
+            sop_text TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(permit_id, language)
+        );
     """)
     conn.commit()
+
+    # Migration: add sop_text if upgrading from older schema
+    try:
+        conn.execute("ALTER TABLE work_permits ADD COLUMN sop_text TEXT")
+        conn.commit()
+    except Exception:
+        pass  # column already exists
 
     import bcrypt
     existing = conn.execute("SELECT id FROM admins WHERE username = 'admin'").fetchone()
