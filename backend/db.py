@@ -75,12 +75,48 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(permit_id, language)
         );
+        CREATE TABLE IF NOT EXISTS electrical_isolations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            permit_id INTEGER NOT NULL,
+            technical_object TEXT NOT NULL,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            tagging_condition TEXT NOT NULL DEFAULT 'deenergised',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS jsa_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            permit_id INTEGER NOT NULL,
+            doc_no TEXT UNIQUE NOT NULL,
+            jsa_content TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
     """)
     conn.commit()
 
     # Migration: add sop_text if upgrading from older schema
     try:
         conn.execute("ALTER TABLE work_permits ADD COLUMN sop_text TEXT")
+        conn.commit()
+    except Exception:
+        pass  # column already exists
+
+    # Migration: add tagging_condition to electrical_isolations
+    try:
+        conn.execute("ALTER TABLE electrical_isolations ADD COLUMN tagging_condition TEXT NOT NULL DEFAULT 'deenergised'")
+        conn.commit()
+    except Exception:
+        pass  # column already exists
+
+    # Migration: add jsa_content to jsa_records
+    try:
+        conn.execute("ALTER TABLE jsa_records ADD COLUMN jsa_content TEXT")
+        conn.commit()
+    except Exception:
+        pass  # column already exists
+
+    # Migration: add iso_no to electrical_isolations
+    try:
+        conn.execute("ALTER TABLE electrical_isolations ADD COLUMN iso_no TEXT")
         conn.commit()
     except Exception:
         pass  # column already exists

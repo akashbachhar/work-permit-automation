@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 import json
 import datetime
+import traceback
 
 from backend.db import get_db
 from backend.auth import auth_required
@@ -8,9 +9,48 @@ from backend.auth import auth_required
 work_permit_bp = Blueprint("work_permit", __name__, url_prefix="/api/work-permits")
 
 BASE_PERMIT_NO = 100000100000
+BASE_JSA_DOC_NO = 200000000001
+BASE_ISO_NO = 300000000001
 
 PERMIT_SUBTYPES = ["Hot", "Cold", "Electrical", "Height", "Composite", "Confined Space"]
 SHIFTS = ["07:00 - 15:00", "15:00 - 23:00", "23:00 - 07:00", "08:30 - 17:00", "17:00 - 23:00"]
+
+JSA_JOB_STEPS = [
+    'ALIGNMENT WORK','ANTI TERMITE TREATMENT','ASPHALT CONCRETE PAVING','BATTERY MAINTENANCE',
+    'BUILDING PAINTING','BUILDING REPAIR','CABLE LOOP CHECKING','CABLE/OFC JOINTING',
+    'COLD CUTTING','COLD FLARING','CONCRETE BREAKING','D. G. / FIRE ENGINE MAINTENANCE',
+    'DCV REPAIR','DISMANTLING OF STRUCTURE','DRILLING','EARTH PIT TESTING',
+    'EMERGENCY RESPONSE VEHICLE','ENTRY IN CONFINED SPACE (AG TANKS FRT)',
+    'ENTRY IN CONFINED SPACE (CLOSED VESSELS)','ERECTION & USE OF SCAFFOLDING',
+    'ERECTION OF MS STRUCTURE','EXCAVATION','FENCING OF BOUNDARY WALL',
+    'FIRE EXTINGUISHER SERVICING (CO2)','FIRE EXTINGUISHER SERVICING (DCP)',
+    'FLANGE JOINT CONNECTION/DISCONNECTION','GAS CUTTING','GASKET REPLACEMENT',
+    'GENERAL MAINTENANCE OF PUMPS','GRASS CUTTING / GARDENING','GRASS CUTTING BY MACHINE',
+    'GRIT/SAND/CU BLASTING','HIGH MAST LIGHT REPLACEMENT','HOUSEKEEPING OF PLANT AREA',
+    'HT/LT SWITCHGEAR MAINTENANCE','HVLR REPAIR','HYDRO TESTING',
+    'HYDROSTATIC TESTING OF HOSE','INSTALLATION OF MATERIAL BY CRANE',
+    'LIFTING OF MATERIAL BY CHAIN PULLEY','LIGHTING /FANS/AC MAINTENANCE',
+    'MAINTENANCE OF CLEAN AGENT SYSTEM','MAINTENANCE OF EOT/HOT/JIB CRANE',
+    'MAINTENANCE OF FIRE ALARM PANEL','MAINTENANCE OF HVAC/AC REPAIR',
+    'MAINTENANCE OF HYDRANT / MONITOR','MAINTENANCE OF MFM','SEAL LEAKAGE SWITCH',
+    'LEVEL SWITCH','MAINTENANCE OF TELECOM SYSTEMS',
+    'MAINTENANCE/ CALIBRATION OF PT, PG, DPT, PS','MAINTENANCE/REPAIR OF ELECTRIC MOTOR',
+    'MAINTENNACE OF FCV/PCV','MISC ELECTRICAL MAINTENANCE','MISC. CIVIL / BRICK WORK',
+    'MISC. CIVIL STRUCTURE DISMANTLING','MISC. ELECTRICAL WORK ELECTRICAL ISOLATION',
+    'MOCK FIRE DRILL','MOV ACTUATOR REPAIR/CONFIGURATION','MOV REPAIR','OFFICE WORK SITTING',
+    'OIL TOP UP FOR PUMPS','OPERATION OF DV','PEST CONTROL','PHOTOGRAPHY',
+    'PIGGING OPERATION INCLUDING BARREL SERVICING','PIPELINE REPAIRS / REPLACEMENT',
+    'PIPELINE SLEEVING JOB','PIPELINE/EQUIPMENT ERECTION',
+    'POST WELD TREATMENT/STRESS RELIEVING/NORMALISING','PRODUCT REMOVAL & DEPRESSURIZING',
+    'PSP MEASUREMENT','PUMP ALIGNMENT','PUMP REPAIR','RADIOGRAPHY WORK',
+    'REPAIR OF FIRE EXTINGUISHER','REPLACEMENT OF FUSE IN ELECTRICAL POWERED PANEL',
+    'RESUME OPERATION','ROOF SHEET REPAIR','SHIFTING OF HEAVY MATERIAL','SPRAY PAINTING',
+    'SPRINKLER CLEANING','STRAINER CLEANING','SWITCH YARD MAINTENANCE','SWIVEL JOINT REPAIR',
+    'TANK LEG POSITION CHANGE','TRANSFORMER MAINTENANCE','TSV / SRV MAINTENANCE',
+    'USE OF HAND TOOLS','USING LAPTOP/CALIBRATION REMOTE IN HAZARDOUS LOCATION',
+    'VALVE REPAIR','VALVE REPLACEMENT','VEHICLE ENTRY','WELDING','WORK AT HEIGHT',
+    'WORK START UP','WRAPPING COATING PIPELINES',
+]
 
 
 @work_permit_bp.route("/options")
@@ -47,6 +87,8 @@ def create_permit():
     gas_h2s = data.get("gas_h2s")
     checklist_done = data.get("checklist_done", [])
     checklist_not_required = data.get("checklist_not_required", [])
+    ei_items = data.get("electrical_isolation_items", [])
+    jsa_data = data.get("jsa_data")
 
     if not all([work_order_no, permit_subtype, shift, exact_location, partner_no]):
         return jsonify({"error": "All required fields must be filled"}), 400
@@ -78,7 +120,7 @@ def create_permit():
     valid_until = (now + datetime.timedelta(days=7)).replace(hour=23, minute=59, second=59)
     renewal_dates = [now.strftime("%Y-%m-%d %H:%M:%S")]
 
-    conn.execute(
+    cur = conn.execute(
         """INSERT INTO work_permits
         (permit_no, work_order_no, permit_subtype, shift, location_lat, location_lng,
          exact_location, num_workmen, partner_no, partner_name,
@@ -92,10 +134,56 @@ def create_permit():
          json.dumps(renewal_dates),
          request.user["name"], valid_until.strftime("%Y-%m-%d %H:%M:%S")),
     )
+    permit_id = cur.lastrowid
+
+    iso_no = None
+    valid_ei = [i for i in ei_items if (i.get("technical_object") or "").strip()]
+    if valid_ei:
+        last_iso = conn.execute("SELECT iso_no FROM electrical_isolations WHERE iso_no IS NOT NULL ORDER BY id DESC LIMIT 1").fetchone()
+        iso_no = str(int(last_iso["iso_no"]) + 1) if last_iso else str(BASE_ISO_NO)
+        for item in valid_ei:
+            conn.execute(
+                "INSERT INTO electrical_isolations (permit_id, technical_object, quantity, iso_no) VALUES (?, ?, ?, ?)",
+                (permit_id, item["technical_object"].strip(), int(item.get("quantity") or 1), iso_no),
+            )
+
+    jsa_doc_no = None
+    if jsa_data:
+        last_jsa = conn.execute("SELECT doc_no FROM jsa_records ORDER BY id DESC LIMIT 1").fetchone()
+        jsa_doc_no = str(int(last_jsa["doc_no"]) + 1) if last_jsa else str(BASE_JSA_DOC_NO)
+        conn.execute(
+            "INSERT INTO jsa_records (permit_id, doc_no, jsa_content) VALUES (?, ?, ?)",
+            (permit_id, jsa_doc_no, json.dumps(jsa_data)),
+        )
     conn.commit()
     conn.close()
 
-    return jsonify({"permit_no": next_no, "message": "Work permit created"}), 201
+    return jsonify({"permit_no": next_no, "iso_no": iso_no, "jsa_doc_no": jsa_doc_no, "message": "Work permit created"}), 201
+
+
+@work_permit_bp.route("/generate-jsa", methods=["POST"])
+@auth_required
+def generate_jsa_route():
+    data = request.get_json(silent=True) or {}
+    work_order_no = (data.get("work_order_no") or "").strip()
+    permit_subtype = (data.get("permit_subtype") or "").strip()
+
+    if not permit_subtype:
+        return jsonify({"error": "Permit subtype is required"}), 400
+
+    conn = get_db()
+    order = conn.execute("SELECT description FROM work_orders WHERE order_no = ?", (work_order_no,)).fetchone()
+    conn.close()
+    work_description = order["description"] if order else ""
+
+    try:
+        from rag.query import generate_jsa as rag_generate_jsa
+        jsa = rag_generate_jsa(permit_subtype, work_description, JSA_JOB_STEPS)
+    except Exception as e:
+        print(f"[JSA ERROR] {type(e).__name__}: {e}\n{traceback.format_exc()}", flush=True)
+        return jsonify({"error": f"JSA generation failed: {type(e).__name__}: {e}"}), 500
+
+    return jsonify({"jsa": jsa})
 
 
 @work_permit_bp.route("/valid")

@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { GoogleMap, Marker } from '@react-google-maps/api'
 import { useGoogleMaps } from '../context/GoogleMapsContext'
+import JSADetailModal from './JSADetailModal'
+
 
 const defaultCenter = { lat: 12.975717, lng: 74.834972 }
 
@@ -14,6 +16,7 @@ const mapOptions = {
   mapTypeId: 'satellite',
   disableDefaultUI: true,
   zoomControl: true,
+  gestureHandling: 'greedy',
 }
 
 const DEFAULT_DONE = [
@@ -61,6 +64,12 @@ export default function CreateWorkPermitModal({ onClose }) {
   const [checkNotReq, setCheckNotReq] = useState([...DEFAULT_NOT_REQUIRED])
   const [partnerSearch, setPartnerSearch] = useState('')
   const [partnerFocused, setPartnerFocused] = useState(false)
+  const [hasEI, setHasEI] = useState(false)
+  const [eiItems, setEiItems] = useState([{ technical_object: '', quantity: 1 }])
+  const [jsaLoading, setJsaLoading] = useState(false)
+  const [jsaData, setJsaData] = useState(null)
+  const [jsaError, setJsaError] = useState('')
+  const [viewingJsa, setViewingJsa] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(null)
@@ -111,6 +120,8 @@ export default function CreateWorkPermitModal({ onClose }) {
         gas_h2s: form.gas_h2s !== '' ? Number(form.gas_h2s) : null,
         checklist_done: checkDone,
         checklist_not_required: checkNotReq,
+        electrical_isolation_items: hasEI ? eiItems.filter((i) => i.technical_object.trim()) : [],
+        jsa_data: jsaData || null,
       }
       const res = await fetch('/api/work-permits', {
         method: 'POST',
@@ -120,7 +131,7 @@ export default function CreateWorkPermitModal({ onClose }) {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
-      setSuccess(data.permit_no)
+      setSuccess({ permit_no: data.permit_no, iso_no: data.iso_no, jsa_doc_no: data.jsa_doc_no })
       window.dispatchEvent(new Event('permits-updated'))
     } catch (err) {
       setError(err.message)
@@ -129,9 +140,39 @@ export default function CreateWorkPermitModal({ onClose }) {
     }
   }
 
+  const canGenerateJsa = !!(
+    form.work_order_no && form.permit_subtype && form.shift &&
+    form.location_lat && form.exact_location && form.num_workmen && form.partner_no
+  )
+
+  const handleGenerateJsa = async () => {
+    setJsaLoading(true)
+    setJsaError('')
+    setJsaData(null)
+    try {
+      const res = await fetch('/api/work-permits/generate-jsa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          work_order_no: form.work_order_no,
+          permit_subtype: form.permit_subtype,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setJsaData(data.jsa)
+    } catch (err) {
+      setJsaError(err.message)
+    } finally {
+      setJsaLoading(false)
+    }
+  }
+
   const selectedPartner = options.partners.find((p) => p.partner_no === form.partner_no)
 
   return (
+    <>
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
@@ -147,7 +188,19 @@ export default function CreateWorkPermitModal({ onClose }) {
                 <path d="M8 12l3 3 5-6" />
               </svg>
               <h3>Work Permit Created</h3>
-              <p className="order-no">{success}</p>
+              <p className="order-no">{success.permit_no}</p>
+              {success.iso_no && (
+                <p className="success-detail-row">
+                  <span className="success-detail-label">Isolation No</span>
+                  <span className="success-detail-value">{success.iso_no}</span>
+                </p>
+              )}
+              {success.jsa_doc_no && (
+                <p className="success-detail-row">
+                  <span className="success-detail-label">JSA Doc No</span>
+                  <span className="success-detail-value">{success.jsa_doc_no}</span>
+                </p>
+              )}
             </div>
             <button className="modal-btn" onClick={onClose}>Close</button>
           </div>
@@ -328,12 +381,117 @@ export default function CreateWorkPermitModal({ onClose }) {
               </div>
             </div>
 
-            <button className="modal-btn" type="submit" disabled={submitting}>
+            <div className="safety-docs-section">
+              <h4 className="safety-docs-title">Safety Documents</h4>
+
+              <div className="safety-docs-row">
+                {jsaData ? (
+                  <button
+                    type="button"
+                    className="safety-doc-btn safety-doc-btn-success"
+                    onClick={() => setViewingJsa(true)}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    View JSA ({jsaData.job_steps?.length} steps)
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="safety-doc-btn"
+                    disabled={jsaLoading || !canGenerateJsa}
+                    title={!canGenerateJsa ? 'Fill all required fields above first' : ''}
+                    onClick={handleGenerateJsa}
+                  >
+                    {jsaLoading ? <><span className="jsa-spinner" /> Generating...</> : 'Generate JSA'}
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  className={`safety-doc-btn${hasEI ? ' safety-doc-btn-active' : ''}`}
+                  onClick={() => setHasEI(!hasEI)}
+                >
+                  {hasEI ? (
+                    <>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      Electrical Isolation
+                    </>
+                  ) : 'Add Electrical Isolation'}
+                </button>
+              </div>
+
+              {!canGenerateJsa && (
+                <p className="jsa-fields-note">Fill all required fields above to enable JSA generation</p>
+              )}
+              {jsaError && <p className="jsa-error">{jsaError}</p>}
+
+              {hasEI && (
+                <div className="ei-items-list">
+                  {eiItems.map((item, idx) => (
+                    <div key={idx} className="ei-item-row">
+                      <input
+                        type="text"
+                        className="ei-object-input"
+                        placeholder="Technical object to isolate"
+                        value={item.technical_object}
+                        onChange={(e) => {
+                          const updated = [...eiItems]
+                          updated[idx] = { ...item, technical_object: e.target.value }
+                          setEiItems(updated)
+                        }}
+                      />
+                      <input
+                        type="number"
+                        className="ei-qty-input"
+                        min="1"
+                        value={item.quantity}
+                        onChange={(e) => {
+                          const updated = [...eiItems]
+                          updated[idx] = { ...item, quantity: Number(e.target.value) }
+                          setEiItems(updated)
+                        }}
+                      />
+                      {eiItems.length > 1 && (
+                        <button
+                          type="button"
+                          className="ei-remove-btn"
+                          onClick={() => setEiItems(eiItems.filter((_, i) => i !== idx))}
+                        >
+                          &times;
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="ei-add-btn"
+                    onClick={() => setEiItems([...eiItems, { technical_object: '', quantity: 1 }])}
+                  >
+                    + Add Item
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <button
+              className="modal-btn"
+              type="submit"
+              disabled={submitting || jsaLoading}
+            >
               {submitting ? 'Creating...' : 'Create Work Permit'}
             </button>
           </form>
         )}
       </div>
     </div>
+
+    {viewingJsa && jsaData && (
+      <JSADetailModal
+        docNo="(unsaved)"
+        jsaContent={jsaData}
+        onClose={() => setViewingJsa(false)}
+      />
+    )}
+  </>
   )
 }

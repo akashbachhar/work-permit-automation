@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { GoogleMap, Marker } from '@react-google-maps/api'
 import { useGoogleMaps } from '../../context/GoogleMapsContext'
+import JSADetailModal from '../../components/JSADetailModal'
+
 
 const PRIORITIES = ['Safety Critical', 'High', 'Medium', 'Low']
 
@@ -31,7 +33,7 @@ const DEFAULT_NOT_REQUIRED = [
 
 const defaultCenter = { lat: 12.975717, lng: 74.834972 }
 const permitMapStyle = { width: '100%', height: '220px', borderRadius: '8px' }
-const permitMapOptions = { mapTypeId: 'satellite', disableDefaultUI: true, zoomControl: true }
+const permitMapOptions = { mapTypeId: 'satellite', disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy' }
 
 function AdminCreatePermitModal({ onClose, onSaved }) {
   const isLoaded = useGoogleMaps()
@@ -44,9 +46,46 @@ function AdminCreatePermitModal({ onClose, onSaved }) {
   })
   const [checkDone, setCheckDone] = useState([...DEFAULT_DONE])
   const [checkNotReq, setCheckNotReq] = useState([...DEFAULT_NOT_REQUIRED])
+  const [partnerSearch, setPartnerSearch] = useState('')
+  const [partnerFocused, setPartnerFocused] = useState(false)
+  const [hasEI, setHasEI] = useState(false)
+  const [eiItems, setEiItems] = useState([{ technical_object: '', quantity: 1 }])
+  const [jsaLoading, setJsaLoading] = useState(false)
+  const [jsaData, setJsaData] = useState(null)
+  const [jsaError, setJsaError] = useState('')
+  const [viewingJsa, setViewingJsa] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(null)
+
+  const canGenerateJsa = !!(
+    form.work_order_no && form.permit_subtype && form.shift &&
+    form.location_lat && form.exact_location && form.num_workmen && form.partner_no
+  )
+
+  const handleGenerateJsa = async () => {
+    setJsaLoading(true)
+    setJsaError('')
+    setJsaData(null)
+    try {
+      const res = await fetch('/api/admin/generate-jsa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          work_order_no: form.work_order_no,
+          permit_subtype: form.permit_subtype,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setJsaData(data.jsa)
+    } catch (err) {
+      setJsaError(err.message)
+    } finally {
+      setJsaLoading(false)
+    }
+  }
 
   useEffect(() => {
     fetch('/api/admin/permit-options', { credentials: 'include' })
@@ -69,6 +108,8 @@ function AdminCreatePermitModal({ onClose, onSaved }) {
           location_lng: form.location_lng,
           num_workmen: form.num_workmen ? Number(form.num_workmen) : null,
           gas_o2: form.gas_o2 !== '' ? Number(form.gas_o2) : null,
+          electrical_isolation_items: hasEI ? eiItems.filter((i) => i.technical_object.trim()) : [],
+          jsa_data: jsaData || null,
           gas_lel: form.gas_lel !== '' ? Number(form.gas_lel) : null,
           gas_co: form.gas_co !== '' ? Number(form.gas_co) : null,
           gas_h2s: form.gas_h2s !== '' ? Number(form.gas_h2s) : null,
@@ -78,7 +119,7 @@ function AdminCreatePermitModal({ onClose, onSaved }) {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
-      setSuccess(data.permit_no)
+      setSuccess({ permit_no: data.permit_no, iso_no: data.iso_no, jsa_doc_no: data.jsa_doc_no })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -87,6 +128,7 @@ function AdminCreatePermitModal({ onClose, onSaved }) {
   }
 
   return (
+    <>
     <div className="admin-modal-overlay" onClick={onClose}>
       <div className="admin-modal admin-modal-wide" onClick={(e) => e.stopPropagation()}>
         <div className="admin-modal-header">
@@ -94,12 +136,24 @@ function AdminCreatePermitModal({ onClose, onSaved }) {
           <button className="admin-modal-close" onClick={onClose}>&times;</button>
         </div>
         {success ? (
-          <div className="admin-modal-body" style={{ alignItems: 'center', gap: '1rem', padding: '2rem' }}>
+          <div className="admin-modal-body" style={{ alignItems: 'center', gap: '0.75rem', padding: '2rem', textAlign: 'center' }}>
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10" />
               <path d="M8 12l3 3 5-6" />
             </svg>
-            <span className="mono-cell" style={{ fontSize: '1.3rem' }}>{success}</span>
+            <span className="mono-cell" style={{ fontSize: '1.3rem' }}>{success.permit_no}</span>
+            {success.iso_no && (
+              <p className="success-detail-row">
+                <span className="success-detail-label">Isolation No</span>
+                <span className="success-detail-value">{success.iso_no}</span>
+              </p>
+            )}
+            {success.jsa_doc_no && (
+              <p className="success-detail-row">
+                <span className="success-detail-label">JSA Doc No</span>
+                <span className="success-detail-value">{success.jsa_doc_no}</span>
+              </p>
+            )}
             <button onClick={() => { onSaved() }}>Close</button>
           </div>
         ) : (
@@ -131,7 +185,7 @@ function AdminCreatePermitModal({ onClose, onSaved }) {
             <label>
               Work Location Coordinate
               {form.location_lat && (
-                <span style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#4ade80' }}>
+                <span className="coord-display">
                   {form.location_lat.toFixed(6)}, {form.location_lng.toFixed(6)}
                 </span>
               )}
@@ -150,12 +204,12 @@ function AdminCreatePermitModal({ onClose, onSaved }) {
                   )}
                 </GoogleMap>
               ) : (
-                <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f1b2d', borderRadius: '8px', color: '#64748b' }}>Loading map...</div>
+                <div className="admin-permit-map-loading">Loading map...</div>
               )}
             </div>
             <label>
               Exact Work Location
-              <input type="text" value={form.exact_location} onChange={(e) => setForm({ ...form, exact_location: e.target.value })} required />
+              <input type="text" value={form.exact_location} onChange={(e) => setForm({ ...form, exact_location: e.target.value })} required placeholder="e.g. Near Pump House 3, Unit A" />
             </label>
             <label>
               No. of Workmen
@@ -163,10 +217,59 @@ function AdminCreatePermitModal({ onClose, onSaved }) {
             </label>
             <label>
               Partner
-              <select value={form.partner_no} onChange={(e) => setForm({ ...form, partner_no: e.target.value })} required>
-                <option value="">Select partner</option>
-                {options.partners.map((p) => <option key={p.partner_no} value={p.partner_no}>{p.partner_no} — {p.partner_name}</option>)}
-              </select>
+              <div className="partner-select">
+                <input
+                  type="text"
+                  className="partner-search"
+                  placeholder="Search partner..."
+                  value={form.partner_no
+                    ? `${options.partners.find((p) => p.partner_no === form.partner_no)?.partner_no} — ${options.partners.find((p) => p.partner_no === form.partner_no)?.partner_name}`
+                    : partnerSearch}
+                  onChange={(e) => {
+                    setPartnerSearch(e.target.value)
+                    setForm({ ...form, partner_no: '' })
+                    setPartnerFocused(true)
+                  }}
+                  onFocus={() => {
+                    setPartnerFocused(true)
+                    if (form.partner_no) {
+                      setPartnerSearch('')
+                      setForm({ ...form, partner_no: '' })
+                    }
+                  }}
+                  onBlur={() => setTimeout(() => setPartnerFocused(false), 200)}
+                />
+                {!form.partner_no && partnerFocused && (
+                  <div className="partner-dropdown">
+                    {options.partners.filter((p) =>
+                      p.partner_name.toLowerCase().includes(partnerSearch.toLowerCase()) ||
+                      p.partner_no.includes(partnerSearch)
+                    ).length === 0 ? (
+                      <div className="partner-option partner-empty">No match</div>
+                    ) : (
+                      options.partners
+                        .filter((p) =>
+                          p.partner_name.toLowerCase().includes(partnerSearch.toLowerCase()) ||
+                          p.partner_no.includes(partnerSearch)
+                        )
+                        .map((p) => (
+                          <div
+                            key={p.partner_no}
+                            className="partner-option"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setForm({ ...form, partner_no: p.partner_no })
+                              setPartnerSearch('')
+                              setPartnerFocused(false)
+                            }}
+                          >
+                            {p.partner_no} — {p.partner_name}
+                          </div>
+                        ))
+                    )}
+                  </div>
+                )}
+              </div>
             </label>
             <fieldset className="admin-gas-group">
               <legend>Gas Test</legend>
@@ -194,13 +297,114 @@ function AdminCreatePermitModal({ onClose, onSaved }) {
                 </div>
               </div>
             </div>
-            <button type="submit" disabled={submitting}>
+            <div className="safety-docs-section">
+              <h4 className="safety-docs-title">Safety Documents</h4>
+
+              <div className="safety-docs-row">
+                {jsaData ? (
+                  <button
+                    type="button"
+                    className="safety-doc-btn safety-doc-btn-success"
+                    onClick={() => setViewingJsa(true)}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    View JSA ({jsaData.job_steps?.length} steps)
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="safety-doc-btn"
+                    disabled={jsaLoading || !canGenerateJsa}
+                    title={!canGenerateJsa ? 'Fill all required fields above first' : ''}
+                    onClick={handleGenerateJsa}
+                  >
+                    {jsaLoading ? <><span className="jsa-spinner" /> Generating...</> : 'Generate JSA'}
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  className={`safety-doc-btn${hasEI ? ' safety-doc-btn-active' : ''}`}
+                  onClick={() => setHasEI(!hasEI)}
+                >
+                  {hasEI ? (
+                    <>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      Electrical Isolation
+                    </>
+                  ) : 'Add Electrical Isolation'}
+                </button>
+              </div>
+
+              {!canGenerateJsa && (
+                <p className="jsa-fields-note">Fill all required fields above to enable JSA generation</p>
+              )}
+              {jsaError && <p className="jsa-error">{jsaError}</p>}
+
+              {hasEI && (
+                <div className="ei-items-list">
+                  {eiItems.map((item, idx) => (
+                    <div key={idx} className="ei-item-row">
+                      <input
+                        type="text"
+                        className="ei-object-input"
+                        placeholder="Technical object to isolate"
+                        value={item.technical_object}
+                        onChange={(e) => {
+                          const updated = [...eiItems]
+                          updated[idx] = { ...item, technical_object: e.target.value }
+                          setEiItems(updated)
+                        }}
+                      />
+                      <input
+                        type="number"
+                        className="ei-qty-input"
+                        min="1"
+                        value={item.quantity}
+                        onChange={(e) => {
+                          const updated = [...eiItems]
+                          updated[idx] = { ...item, quantity: Number(e.target.value) }
+                          setEiItems(updated)
+                        }}
+                      />
+                      {eiItems.length > 1 && (
+                        <button
+                          type="button"
+                          className="ei-remove-btn"
+                          onClick={() => setEiItems(eiItems.filter((_, i) => i !== idx))}
+                        >
+                          &times;
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="ei-add-btn"
+                    onClick={() => setEiItems([...eiItems, { technical_object: '', quantity: 1 }])}
+                  >
+                    + Add Item
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <button type="submit" disabled={submitting || jsaLoading}>
               {submitting ? 'Creating...' : 'Create Work Permit'}
             </button>
           </form>
         )}
       </div>
     </div>
+
+    {viewingJsa && jsaData && (
+      <JSADetailModal
+        docNo="(unsaved)"
+        jsaContent={jsaData}
+        onClose={() => setViewingJsa(false)}
+      />
+    )}
+  </>
   )
 }
 
@@ -451,6 +655,18 @@ function PermitViewModal({ permit, partners, onClose, onSaved }) {
   const [renewing, setRenewing] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
   const [validUntil, setValidUntil] = useState(permit.valid_until)
+  const [permitJsa, setPermitJsa] = useState(null)
+  const [permitEI, setPermitEI] = useState(null)
+  const [viewingJsa, setViewingJsa] = useState(false)
+
+  useEffect(() => {
+    fetch(`/api/admin/work-permits/${permit.id}/jsa`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((data) => setPermitJsa(data.jsa || null))
+    fetch(`/api/admin/work-permits/${permit.id}/electrical-isolations`, { credentials: 'include' })
+      .then((r) => r.json())
+      .then((data) => setPermitEI(data.electrical_isolations || null))
+  }, [permit.id])
 
   const handleRenew = async () => {
     setRenewing(true)
@@ -514,6 +730,7 @@ function PermitViewModal({ permit, partners, onClose, onSaved }) {
   }
 
   return (
+    <>
     <div className="admin-modal-overlay" onClick={onClose}>
       <div className="admin-modal admin-modal-wide" onClick={(e) => e.stopPropagation()}>
         <div className="admin-modal-header">
@@ -528,6 +745,12 @@ function PermitViewModal({ permit, partners, onClose, onSaved }) {
             <span className="permit-info-label">Work Order</span>
             <span className="permit-info-value mono-cell">{permit.work_order_no}</span>
           </div>
+          {permit.work_description && (
+            <div className="permit-info-row">
+              <span className="permit-info-label">Description</span>
+              <span className="permit-info-value">{permit.work_description}</span>
+            </div>
+          )}
           <div className="permit-info-row">
             <span className="permit-info-label">Created By</span>
             <span className="permit-info-value">{permit.created_by}</span>
@@ -617,12 +840,61 @@ function PermitViewModal({ permit, partners, onClose, onSaved }) {
             </div>
           </div>
 
+          {(permitJsa || permitEI) && (
+            <div className="safety-docs-section">
+              <h4 className="safety-docs-title">Safety Documents</h4>
+              <div className="safety-docs-row">
+                {permitJsa && (
+                  <button type="button" className="safety-doc-btn safety-doc-btn-success" onClick={() => setViewingJsa(true)}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    View JSA ({permitJsa.jsa_content?.job_steps?.length} steps)
+                  </button>
+                )}
+              </div>
+              {permitJsa && (
+                <div className="permit-doc-info-row">
+                  <span className="permit-info-label">JSA Doc No</span>
+                  <span className="permit-info-value mono-cell">{permitJsa.doc_no}</span>
+                </div>
+              )}
+              {permitEI && (
+                <div className="permit-ei-section">
+                  <div className="permit-doc-info-row">
+                    <span className="permit-info-label">Isolation No</span>
+                    <span className="permit-info-value mono-cell">{permitEI.iso_no}</span>
+                    <span className={`ei-tag-badge ${permitEI.tagging_condition === 'energised' ? 'ei-tag-energised' : 'ei-tag-deenergised'}`}>
+                      {permitEI.tagging_condition === 'energised' ? 'Energised' : 'De-energised'}
+                    </span>
+                  </div>
+                  <div className="permit-ei-items">
+                    {permitEI.items.map((item, i) => (
+                      <div key={i} className="permit-ei-item">
+                        <span className="permit-ei-object">{item.technical_object}</span>
+                        <span className="permit-ei-qty">×{item.quantity}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <button type="submit" disabled={submitting}>
             {submitting ? 'Saving...' : 'Save Changes'}
           </button>
         </form>
       </div>
     </div>
+
+    {viewingJsa && permitJsa && (
+      <JSADetailModal
+        docNo={permitJsa.doc_no}
+        permitNo={permit.permit_no}
+        jsaContent={permitJsa.jsa_content}
+        onClose={() => setViewingJsa(false)}
+      />
+    )}
+  </>
   )
 }
 
@@ -823,10 +1095,14 @@ export default function AdminDashboard({ admin, onLogout }) {
   const [permits, setPermits] = useState([])
   const [partners, setPartners] = useState([])
   const [orderTypes, setOrderTypes] = useState([])
+  const [electricalIsolations, setElectricalIsolations] = useState([])
+  const [jsaRecords, setJsaRecords] = useState([])
   const [loadingUsers, setLoadingUsers] = useState(true)
   const [loadingOrders, setLoadingOrders] = useState(true)
   const [loadingPermits, setLoadingPermits] = useState(true)
   const [loadingPartners, setLoadingPartners] = useState(true)
+  const [loadingEI, setLoadingEI] = useState(true)
+  const [loadingJSA, setLoadingJSA] = useState(true)
   const [showCreds, setShowCreds] = useState(false)
   const [creds, setCreds] = useState({ current_password: '', username: '', password: '' })
   const [credsMsg, setCredsMsg] = useState('')
@@ -840,6 +1116,7 @@ export default function AdminDashboard({ admin, onLogout }) {
   const [showCreatePermit, setShowCreatePermit] = useState(false)
   const [sopPermit, setSopPermit] = useState(null)
   const [sopMode, setSopMode] = useState('generate')
+  const [viewJsa, setViewJsa] = useState(null)
 
   const fetchUsers = () => {
     setLoadingUsers(true)
@@ -873,11 +1150,29 @@ export default function AdminDashboard({ admin, onLogout }) {
       .finally(() => setLoadingPartners(false))
   }
 
+  const fetchElectricalIsolations = () => {
+    setLoadingEI(true)
+    fetch('/api/admin/electrical-isolations', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((data) => setElectricalIsolations(data.electrical_isolations || []))
+      .finally(() => setLoadingEI(false))
+  }
+
+  const fetchJsaRecords = () => {
+    setLoadingJSA(true)
+    fetch('/api/admin/jsa-records', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((data) => setJsaRecords(data.jsa_records || []))
+      .finally(() => setLoadingJSA(false))
+  }
+
   useEffect(() => {
     fetchUsers()
     fetchOrders()
     fetchPermits()
     fetchPartners()
+    fetchElectricalIsolations()
+    fetchJsaRecords()
     fetch('/api/admin/order-types', { credentials: 'include' })
       .then((r) => r.json())
       .then((data) => setOrderTypes(data.order_types || []))
@@ -1005,73 +1300,18 @@ export default function AdminDashboard({ admin, onLogout }) {
           </div>
         )}
 
-        <div className="admin-card admin-card-full">
-          <div className="admin-card-header">
-            <h3>Work Orders</h3>
-            <div className="admin-card-actions">
-              <button className="admin-btn-create" onClick={openCreate}>+ Create</button>
-              <button className="admin-btn-icon" onClick={fetchOrders} title="Refresh">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 2v6h-6" />
-                  <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-                  <path d="M3 22v-6h6" />
-                  <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
-                </svg>
-              </button>
-            </div>
-          </div>
-          {loadingOrders ? (
-            <p className="admin-loading">Loading work orders...</p>
-          ) : orders.length === 0 ? (
-            <p className="admin-empty">No work orders yet</p>
-          ) : (
-            <div className="admin-table-wrap">
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>Order No</th>
-                    <th>Type</th>
-                    <th>Description</th>
-                    <th>Priority</th>
-                    <th>Created By</th>
-                    <th>Created At</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {orders.map((o) => (
-                    <tr key={o.id}>
-                      <td className="mono-cell">{o.order_no}</td>
-                      <td>{o.order_type} — {o.order_type_desc}</td>
-                      <td>{o.description}</td>
-                      <td><span className={`priority-badge ${priorityClass(o.priority)}`}>{o.priority}</span></td>
-                      <td>{o.created_by}</td>
-                      <td>{new Date(o.created_at).toLocaleString()}</td>
-                      <td className="action-cell">
-                        <button className="admin-btn-edit" onClick={() => openEdit(o)}>Edit</button>
-                        <button className="admin-btn-danger" onClick={() => deleteOrder(o.id)}>Delete</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
+        {/* 1 — Work Permits (full width) */}
         <div className="admin-card admin-card-full">
           <div className="admin-card-header">
             <h3>Work Permits</h3>
             <div className="admin-card-actions">
               <button className="admin-btn-create" onClick={() => setShowCreatePermit(true)}>+ Create</button>
               <button className="admin-btn-icon" onClick={fetchPermits} title="Refresh">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 2v6h-6" />
-                <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-                <path d="M3 22v-6h6" />
-                <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
-              </svg>
-            </button>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+                  <path d="M3 22v-6h6" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+                </svg>
+              </button>
             </div>
           </div>
           {loadingPermits ? (
@@ -1131,6 +1371,179 @@ export default function AdminDashboard({ admin, onLogout }) {
           )}
         </div>
 
+        {/* 2 — Work Orders (full width) */}
+        <div className="admin-card admin-card-full">
+          <div className="admin-card-header">
+            <h3>Work Orders</h3>
+            <div className="admin-card-actions">
+              <button className="admin-btn-create" onClick={openCreate}>+ Create</button>
+              <button className="admin-btn-icon" onClick={fetchOrders} title="Refresh">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+                  <path d="M3 22v-6h6" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          {loadingOrders ? (
+            <p className="admin-loading">Loading work orders...</p>
+          ) : orders.length === 0 ? (
+            <p className="admin-empty">No work orders yet</p>
+          ) : (
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Order No</th>
+                    <th>Type</th>
+                    <th>Description</th>
+                    <th>Priority</th>
+                    <th>Created By</th>
+                    <th>Created At</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {orders.map((o) => (
+                    <tr key={o.id}>
+                      <td className="mono-cell">{o.order_no}</td>
+                      <td>{o.order_type} — {o.order_type_desc}</td>
+                      <td>{o.description}</td>
+                      <td><span className={`priority-badge ${priorityClass(o.priority)}`}>{o.priority}</span></td>
+                      <td>{o.created_by}</td>
+                      <td>{new Date(o.created_at).toLocaleString()}</td>
+                      <td className="action-cell">
+                        <button className="admin-btn-edit" onClick={() => openEdit(o)}>Edit</button>
+                        <button className="admin-btn-danger" onClick={() => deleteOrder(o.id)}>Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* 3 — JSA (half) + Electrical Isolations (half) */}
+        <div className="admin-card">
+          <div className="admin-card-header">
+            <h3>Job Safety Analysis (JSA)</h3>
+            <button className="admin-btn-icon" onClick={fetchJsaRecords} title="Refresh">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+                <path d="M3 22v-6h6" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+              </svg>
+            </button>
+          </div>
+          {loadingJSA ? (
+            <p className="admin-loading">Loading JSA records...</p>
+          ) : jsaRecords.length === 0 ? (
+            <p className="admin-empty">No JSA records yet</p>
+          ) : (
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>JSA Doc No</th>
+                    <th>Permit No</th>
+                    <th>Steps</th>
+                    <th>Created At</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {jsaRecords.map((j) => (
+                    <tr key={j.id}>
+                      <td className="mono-cell">{j.doc_no}</td>
+                      <td className="mono-cell">{j.permit_no}</td>
+                      <td>{j.jsa_content?.job_steps?.length ?? '-'}</td>
+                      <td>{new Date(j.created_at).toLocaleString()}</td>
+                      <td className="action-cell">
+                        {j.jsa_content && (
+                          <button className="admin-btn-edit" onClick={() => setViewJsa({ docNo: j.doc_no, permitNo: j.permit_no, jsaContent: j.jsa_content })}>View</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="admin-card">
+          <div className="admin-card-header">
+            <h3>Electrical Isolations</h3>
+            <button className="admin-btn-icon" onClick={fetchElectricalIsolations} title="Refresh">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+                <path d="M3 22v-6h6" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+              </svg>
+            </button>
+          </div>
+          {loadingEI ? (
+            <p className="admin-loading">Loading electrical isolations...</p>
+          ) : electricalIsolations.length === 0 ? (
+            <p className="admin-empty">No electrical isolations recorded</p>
+          ) : (
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>ISO No</th>
+                    <th>Permit No</th>
+                    <th>Location</th>
+                    <th>Technical Objects</th>
+                    <th>Tagging</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {electricalIsolations.map((ei) => (
+                    <tr key={ei.permit_id}>
+                      <td className="mono-cell">{ei.iso_no ?? '—'}</td>
+                      <td className="mono-cell">{ei.permit_no}</td>
+                      <td className="location-cell">{ei.exact_location}</td>
+                      <td>
+                        <ul className="ei-admin-list">
+                          {ei.items.map((item, i) => (
+                            <li key={i}>{item.technical_object} <span className="ei-qty-badge">×{item.quantity}</span></li>
+                          ))}
+                        </ul>
+                      </td>
+                      <td>
+                        <div className="ei-tagging-cell">
+                          <label className={`ei-switch ${ei.tagging_condition === 'energised' ? 'ei-switch-locked' : ''}`}>
+                            <input
+                              type="checkbox"
+                              checked={ei.tagging_condition === 'energised'}
+                              disabled={ei.tagging_condition === 'energised'}
+                              onChange={async () => {
+                                const res = await fetch(`/api/admin/electrical-isolations/${ei.permit_id}/energise`, {
+                                  method: 'POST', credentials: 'include',
+                                })
+                                if (res.ok) {
+                                  setElectricalIsolations((prev) =>
+                                    prev.map((e) => e.permit_id === ei.permit_id ? { ...e, tagging_condition: 'energised' } : e)
+                                  )
+                                }
+                              }}
+                            />
+                            <span className="ei-switch-slider" />
+                          </label>
+                          <span className={`ei-switch-label ${ei.tagging_condition === 'energised' ? 'ei-label-energised' : 'ei-label-deenergised'}`}>
+                            {ei.tagging_condition === 'energised' ? 'Energised' : 'De-energised'}
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* 4 — Partners (half) + Users (half) */}
         <div className="admin-card">
           <div className="admin-card-header">
             <h3>Partners</h3>
@@ -1138,10 +1551,8 @@ export default function AdminDashboard({ admin, onLogout }) {
               <button className="admin-btn-create" onClick={() => { setModalPartner(null); setShowPartnerModal(true) }}>+ Add</button>
               <button className="admin-btn-icon" onClick={fetchPartners} title="Refresh">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 2v6h-6" />
-                  <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-                  <path d="M3 22v-6h6" />
-                  <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+                  <path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+                  <path d="M3 22v-6h6" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
                 </svg>
               </button>
             </div>
@@ -1184,10 +1595,8 @@ export default function AdminDashboard({ admin, onLogout }) {
             <h3>Registered Users</h3>
             <button className="admin-btn-icon" onClick={fetchUsers} title="Refresh">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 2v6h-6" />
-                <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-                <path d="M3 22v-6h6" />
-                <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+                <path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+                <path d="M3 22v-6h6" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
               </svg>
             </button>
           </div>
@@ -1260,7 +1669,7 @@ export default function AdminDashboard({ admin, onLogout }) {
       {showCreatePermit && (
         <AdminCreatePermitModal
           onClose={() => setShowCreatePermit(false)}
-          onSaved={() => { setShowCreatePermit(false); fetchPermits() }}
+          onSaved={() => { setShowCreatePermit(false); fetchPermits(); fetchElectricalIsolations(); fetchJsaRecords() }}
         />
       )}
 
@@ -1281,6 +1690,15 @@ export default function AdminDashboard({ admin, onLogout }) {
           onGenerated={(id, text) => setPermits((prev) =>
             prev.map((p) => p.id === id ? { ...p, sop_text: text } : p)
           )}
+        />
+      )}
+
+      {viewJsa && (
+        <JSADetailModal
+          docNo={viewJsa.docNo}
+          permitNo={viewJsa.permitNo}
+          jsaContent={viewJsa.jsaContent}
+          onClose={() => setViewJsa(null)}
         />
       )}
     </div>

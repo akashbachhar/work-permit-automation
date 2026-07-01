@@ -4,6 +4,7 @@ Import and use from the Flask backend:
     from rag.query import retrieve, generate_sop
 """
 
+import json
 import threading
 from pathlib import Path
 
@@ -120,6 +121,47 @@ LANGUAGE_NAMES = {
     "bengali": "Bengali (Bengali script)",
     "kannada": "Kannada (Kannada script)",
 }
+
+
+def generate_jsa(permit_subtype: str, work_description: str, all_steps: list) -> dict:
+    """Generate a JSA: LLM selects relevant steps from all_steps and produces hazards/controls."""
+    steps_str = "\n".join(f"- {s}" for s in all_steps)
+    prompt = f"""You are a safety officer at HPCL (Hindustan Petroleum Corporation Limited).
+Generate a Job Safety Analysis (JSA) for the following work.
+
+Work Type: {permit_subtype}
+Work Description: {work_description}
+
+Available Job Steps (full predefined list):
+{steps_str}
+
+Instructions:
+1. From the list above, select 5 to 8 steps that are MOST RELEVANT to the given work type and description.
+2. For each selected step, provide specific Potential Hazards and Hazard Control Measures relevant to petroleum refinery operations.
+3. Use the EXACT step name as it appears in the list.
+4. Respond with ONLY a valid JSON object, no explanation, no markdown fences, no preamble:
+{{
+  "job_steps": [
+    {{
+      "step": "EXACT STEP NAME FROM LIST",
+      "potential_hazards": ["hazard 1", "hazard 2", "hazard 3"],
+      "control_measures": ["measure 1", "measure 2", "measure 3"]
+    }}
+  ]
+}}"""
+
+    response = ollama.chat(
+        model=GENERATE_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        options=GENERATE_OPTIONS,
+    )
+    content = response["message"]["content"].strip()
+    # Strip markdown code fences if the model wraps output in them
+    if content.startswith("```"):
+        content = content.split("\n", 1)[1] if "\n" in content else content[3:]
+        if content.endswith("```"):
+            content = content[:-3].rstrip()
+    return json.loads(content)
 
 
 def translate_sop(sop_text: str, language: str) -> str:
