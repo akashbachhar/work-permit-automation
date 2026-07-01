@@ -650,6 +650,32 @@ def list_jsa_records():
     return jsonify({"jsa_records": results})
 
 
+@admin_bp.route("/jsa-records/<int:jsa_id>/steps", methods=["PUT"])
+@admin_required
+def append_jsa_steps(jsa_id):
+    import json as _j
+    data = request.get_json(force=True)
+    new_steps = data.get("steps", [])
+    if not new_steps:
+        return jsonify({"error": "No steps provided"}), 400
+
+    conn = get_db()
+    row = conn.execute("SELECT jsa_content FROM jsa_records WHERE id = ?", (jsa_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "JSA record not found"}), 404
+
+    content = _j.loads(row["jsa_content"]) if row["jsa_content"] else {"job_steps": []}
+    existing = content.get("job_steps", [])
+    existing.extend(new_steps)
+    content["job_steps"] = existing
+
+    conn.execute("UPDATE jsa_records SET jsa_content = ? WHERE id = ?", (_j.dumps(content), jsa_id))
+    conn.commit()
+    conn.close()
+    return jsonify({"jsa_content": content})
+
+
 @admin_bp.route("/work-permits/<int:permit_id>/renew", methods=["POST"])
 @admin_required
 def renew_work_permit(permit_id):

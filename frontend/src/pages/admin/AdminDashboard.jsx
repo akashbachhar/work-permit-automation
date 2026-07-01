@@ -1089,6 +1089,135 @@ function SOPModal({ permit, mode, onClose, onGenerated }) {
   )
 }
 
+function EditJSAModal({ jsaRecord, onClose, onSaved }) {
+  const [step, setStep] = useState('')
+  const [hazards, setHazards] = useState('')
+  const [measures, setMeasures] = useState('')
+  const [pending, setPending] = useState([])
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const existingCount = jsaRecord.jsaContent?.job_steps?.length ?? 0
+
+  function handleAdd() {
+    if (!step.trim()) return
+    const newStep = {
+      step: step.trim(),
+      potential_hazards: hazards.split('\n').map(s => s.trim()).filter(Boolean),
+      control_measures: measures.split('\n').map(s => s.trim()).filter(Boolean),
+    }
+    setPending(prev => [...prev, newStep])
+    setStep('')
+    setHazards('')
+    setMeasures('')
+  }
+
+  async function handleSave() {
+    if (pending.length === 0) return
+    setSaving(true)
+    setError('')
+    try {
+      const res = await fetch(`/api/admin/jsa-records/${jsaRecord.id}/steps`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ steps: pending }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Save failed')
+      onSaved(data.jsa_content)
+    } catch (e) {
+      setError(e.message)
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="admin-modal-overlay" onClick={onClose}>
+      <div className="admin-modal admin-modal-wide" onClick={e => e.stopPropagation()}>
+        <div className="admin-modal-header">
+          <div>
+            <h3>Edit JSA — {jsaRecord.docNo}</h3>
+            <span style={{ fontSize: '0.78rem', color: '#64748b' }}>Permit {jsaRecord.permitNo} &nbsp;·&nbsp; {existingCount} existing step{existingCount !== 1 ? 's' : ''}</span>
+          </div>
+          <button className="admin-modal-close" onClick={onClose}>&times;</button>
+        </div>
+        <div className="admin-modal-body">
+          <div className="jsa-edit-section-label">Add a new step</div>
+
+          <label className="admin-label">Step Name</label>
+          <input
+            className="admin-input"
+            placeholder="e.g. Ensure Area is Clear of Personnel"
+            value={step}
+            onChange={e => setStep(e.target.value)}
+          />
+
+          <label className="admin-label">Potential Hazards <span style={{ color: '#64748b', fontWeight: 400 }}>(one per line)</span></label>
+          <textarea
+            className="admin-input jsa-edit-textarea"
+            placeholder={"Falls from height\nExposure to chemicals"}
+            value={hazards}
+            onChange={e => setHazards(e.target.value)}
+          />
+
+          <label className="admin-label">Hazard Control Measures <span style={{ color: '#64748b', fontWeight: 400 }}>(one per line)</span></label>
+          <textarea
+            className="admin-input jsa-edit-textarea"
+            placeholder={"Use safety harness\nWear PPE"}
+            value={measures}
+            onChange={e => setMeasures(e.target.value)}
+          />
+
+          <div className="jsa-edit-add-row">
+            <button
+              type="button"
+              className="jsa-edit-add-btn"
+              onClick={handleAdd}
+              disabled={!step.trim()}
+            >
+              + Add Step
+            </button>
+            {pending.length > 0 && (
+              <span className="jsa-edit-status">{pending.length} step{pending.length !== 1 ? 's' : ''} added</span>
+            )}
+          </div>
+
+          {pending.length > 0 && (
+            <div className="jsa-edit-pending-list">
+              {pending.map((s, i) => (
+                <div key={i} className="jsa-edit-pending-item">
+                  <span className="jsa-edit-pending-num">{existingCount + i + 1}</span>
+                  <span className="jsa-edit-pending-name">{s.step}</span>
+                  <button
+                    type="button"
+                    className="jsa-edit-pending-remove"
+                    onClick={() => setPending(prev => prev.filter((_, idx) => idx !== i))}
+                  >×</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {error && <p className="jsa-error">{error}</p>}
+
+          <div className="admin-modal-actions" style={{ marginTop: '1rem' }}>
+            <button type="button" className="admin-btn-secondary" onClick={onClose}>Cancel</button>
+            <button
+              type="button"
+              className="admin-btn-primary"
+              onClick={handleSave}
+              disabled={saving || pending.length === 0}
+            >
+              {saving ? 'Saving…' : `Save ${pending.length > 0 ? `(${pending.length})` : ''}`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function AdminDashboard({ admin, onLogout }) {
   const [users, setUsers] = useState([])
   const [orders, setOrders] = useState([])
@@ -1117,6 +1246,7 @@ export default function AdminDashboard({ admin, onLogout }) {
   const [sopPermit, setSopPermit] = useState(null)
   const [sopMode, setSopMode] = useState('generate')
   const [viewJsa, setViewJsa] = useState(null)
+  const [editJsa, setEditJsa] = useState(null)
 
   const fetchUsers = () => {
     setLoadingUsers(true)
@@ -1462,6 +1592,10 @@ export default function AdminDashboard({ admin, onLogout }) {
                         {j.jsa_content && (
                           <button className="admin-btn-edit" onClick={() => setViewJsa({ docNo: j.doc_no, permitNo: j.permit_no, jsaContent: j.jsa_content })}>View</button>
                         )}
+                        <button
+                          className="admin-btn-secondary-sm"
+                          onClick={() => setEditJsa({ id: j.id, docNo: j.doc_no, permitNo: j.permit_no, jsaContent: j.jsa_content })}
+                        >Edit</button>
                       </td>
                     </tr>
                   ))}
@@ -1699,6 +1833,20 @@ export default function AdminDashboard({ admin, onLogout }) {
           permitNo={viewJsa.permitNo}
           jsaContent={viewJsa.jsaContent}
           onClose={() => setViewJsa(null)}
+        />
+      )}
+
+      {editJsa && (
+        <EditJSAModal
+          jsaRecord={editJsa}
+          onClose={() => setEditJsa(null)}
+          onSaved={(updatedContent) => {
+            setJsaRecords(prev =>
+              prev.map(j => j.id === editJsa.id ? { ...j, jsa_content: updatedContent } : j)
+            )
+            setEditJsa(null)
+            setViewJsa({ docNo: editJsa.docNo, permitNo: editJsa.permitNo, jsaContent: updatedContent })
+          }}
         />
       )}
     </div>
