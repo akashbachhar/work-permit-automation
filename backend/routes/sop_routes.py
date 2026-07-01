@@ -1,3 +1,4 @@
+import datetime
 import re
 import traceback
 from io import BytesIO
@@ -226,8 +227,17 @@ def _is_bold_line(text):
 
 
 def _build_pdf(sop_text: str, permit_no: str, language: str = "english") -> bytes:
+    # ── Colour palette ────────────────────────────────────────────
+    NAVY        = (0, 43, 92)
+    ORANGE      = (234, 88, 12)
+    LIGHT_BLUE  = (235, 244, 255)
+    WHITE       = (255, 255, 255)
+    DARK_TEXT   = (15, 23, 42)
+    GRAY_TEXT   = (100, 116, 139)
+    BORDER      = (203, 213, 225)
+
     pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_auto_page_break(auto=True, margin=22)
     pdf.add_page()
     pdf.set_margins(20, 15, 20)
 
@@ -238,68 +248,137 @@ def _build_pdf(sop_text: str, permit_no: str, language: str = "english") -> byte
         font = "SOPFont"
         font_path = str(LANG_FONTS[language])
         pdf.add_font(font, "", font_path)
-        pdf.add_font(font, "B", font_path)  # no separate bold variant; reuse regular
+        pdf.add_font(font, "B", font_path)
         pdf.add_font("Latin", "", str(LATIN_FALLBACK_REGULAR))
         pdf.add_font("Latin", "B", str(LATIN_FALLBACK_BOLD))
-        pdf.set_fallback_fonts(["Latin"])  # Lohit fonts lack Latin glyphs (headers, numbers)
+        pdf.set_fallback_fonts(["Latin"])
         shaping = LANG_SHAPING[language]
         pdf.set_text_shaping(True, script=shaping["script"], language=shaping["language"])
         clean = _normalize_punct
 
-    # Header
-    pdf.set_font(font, "B", 16)
-    pdf.cell(0, 10, "STANDARD OPERATING PROCEDURE", new_x="LMARGIN", new_y="NEXT", align="C")
-    pdf.set_font(font, "", 11)
-    pdf.cell(0, 7, clean(f"Work Permit: {permit_no}"), new_x="LMARGIN", new_y="NEXT", align="C")
-    pdf.set_draw_color(100, 100, 100)
-    pdf.line(20, pdf.get_y() + 2, 190, pdf.get_y() + 2)
-    pdf.ln(8)
+    LM = pdf.l_margin
+    RM = pdf.r_margin
+    PW = pdf.w - LM - RM   # usable content width
 
+    # ── HEADER BANNER (page 1 only) ───────────────────────────────
+    pdf.set_fill_color(*ORANGE)
+    pdf.rect(0, 0, pdf.w, 3, "F")                   # orange top stripe
+
+    pdf.set_fill_color(*NAVY)
+    pdf.rect(0, 3, pdf.w, 30, "F")                  # navy body
+
+    pdf.set_font(font, "B", 18)
+    pdf.set_text_color(*WHITE)
+    pdf.set_xy(0, 8)
+    pdf.cell(pdf.w, 11, clean("STANDARD OPERATING PROCEDURE"), align="C")
+
+    pdf.set_font(font, "", 9)
+    pdf.set_text_color(180, 210, 255)
+    today = datetime.date.today().strftime("%d %b %Y")
+    pdf.set_xy(0, 21)
+    pdf.cell(pdf.w, 7, clean(f"Work Permit: {permit_no}   |   Date: {today}"), align="C")
+
+    pdf.set_fill_color(*ORANGE)
+    pdf.rect(0, 33, pdf.w, 2.5, "F")               # orange bottom stripe
+
+    pdf.set_y(42)   # push content below banner
+
+    # ── BODY ──────────────────────────────────────────────────────
     for line in sop_text.split("\n"):
         stripped = line.strip()
 
-        if stripped.startswith("### "):
-            text = clean(_strip_inline(stripped[4:]))
-            pdf.set_font(font, "B", 11)
-            pdf.ln(2)
-            pdf.multi_cell(0, 7, text, new_x="LMARGIN", new_y="NEXT")
+        # ── Level-1 heading  (#)
+        if stripped.startswith("# ") and not stripped.startswith("## "):
+            text = clean(_strip_inline(stripped[2:]))
+            pdf.ln(4)
+            pdf.set_font(font, "B", 13)
+            pdf.set_text_color(*NAVY)
+            pdf.set_x(LM)
+            pdf.multi_cell(PW, 7.5, text, new_x="LMARGIN", new_y="NEXT")
 
+        # ── Level-2 section heading  (##) — coloured band
         elif stripped.startswith("## "):
             text = clean(_strip_inline(stripped[3:]))
-            pdf.set_font(font, "B", 13)
             pdf.ln(4)
-            pdf.set_fill_color(230, 230, 240)
-            pdf.multi_cell(0, 8, text, fill=True, new_x="LMARGIN", new_y="NEXT")
+            # ensure enough room
+            if pdf.get_y() > pdf.h - pdf.b_margin - 20:
+                pdf.add_page()
+            y = pdf.get_y()
+            pdf.set_fill_color(*LIGHT_BLUE)
+            pdf.rect(LM, y, PW, 9.5, "F")
+            pdf.set_fill_color(*NAVY)
+            pdf.rect(LM, y, 3.5, 9.5, "F")          # left accent bar
+            pdf.set_fill_color(*ORANGE)
+            pdf.rect(LM + PW - 3.5, y, 3.5, 9.5, "F")  # right accent bar
+            pdf.set_font(font, "B", 10.5)
+            pdf.set_text_color(*NAVY)
+            pdf.set_xy(LM + 7, y + 1.8)
+            pdf.cell(PW - 14, 6.5, text)
+            pdf.set_y(y + 12)
 
-        elif stripped.startswith("# "):
-            text = clean(_strip_inline(stripped[2:]))
-            pdf.set_font(font, "B", 14)
-            pdf.ln(3)
-            pdf.multi_cell(0, 9, text, new_x="LMARGIN", new_y="NEXT")
+        # ── Level-3 sub-heading  (###)
+        elif stripped.startswith("### "):
+            text = clean(_strip_inline(stripped[4:]))
+            pdf.ln(2)
+            pdf.set_font(font, "B", 10)
+            pdf.set_text_color(*ORANGE)
+            pdf.set_x(LM + 1)
+            pdf.cell(5, 6, ">")
+            pdf.set_text_color(*DARK_TEXT)
+            pdf.multi_cell(PW - 6, 6, text, new_x="LMARGIN", new_y="NEXT")
 
+        # ── Bullet point
         elif re.match(r"^[*-]\s+", stripped):
             text = clean(_strip_inline(re.sub(r"^[*-]\s+", "", stripped)))
-            pdf.set_font(font, "", 10)
-            pdf.set_x(26)
-            pdf.multi_cell(0, 6, f"*  {text}", new_x="LMARGIN", new_y="NEXT")
+            pdf.set_x(LM + 4)
+            pdf.set_font(font, "B", 13)
+            pdf.set_text_color(*ORANGE)
+            pdf.cell(5, 5.5, ".")
+            pdf.set_font(font, "", 9.5)
+            pdf.set_text_color(*DARK_TEXT)
+            pdf.multi_cell(PW - 9, 5.5, text, new_x="LMARGIN", new_y="NEXT")
 
+        # ── Numbered list
         elif re.match(r"^\d+\.\s+", stripped):
             m = re.match(r"^(\d+)\.\s+(.+)$", stripped)
             if m:
                 num, text = m.group(1), clean(_strip_inline(m.group(2)))
-                pdf.set_font(font, "", 10)
-                pdf.set_x(26)
-                pdf.multi_cell(0, 6, f"{num}.  {text}", new_x="LMARGIN", new_y="NEXT")
+                pdf.set_x(LM + 4)
+                pdf.set_font(font, "B", 9.5)
+                pdf.set_text_color(*NAVY)
+                pdf.cell(7, 6, f"{num}.")
+                pdf.set_font(font, "", 9.5)
+                pdf.set_text_color(*DARK_TEXT)
+                pdf.multi_cell(PW - 11, 6, text, new_x="LMARGIN", new_y="NEXT")
 
+        # ── Blank line
         elif stripped == "":
-            pdf.ln(3)
+            pdf.ln(2.5)
 
+        # ── Normal paragraph / bold paragraph
         else:
             text = clean(_strip_inline(stripped))
-            if _is_bold_line(stripped):
-                pdf.set_font(font, "B", 10)
-            else:
-                pdf.set_font(font, "", 10)
-            pdf.multi_cell(0, 6, text, new_x="LMARGIN", new_y="NEXT")
+            is_bold = _is_bold_line(stripped)
+            pdf.set_font(font, "B" if is_bold else "", 9.5)
+            pdf.set_text_color(*NAVY if is_bold else DARK_TEXT)
+            pdf.set_x(LM)
+            pdf.multi_cell(PW, 6, text, new_x="LMARGIN", new_y="NEXT")
+
+    # ── FOOTER on every page ───────────────────────────────────────
+    total = pdf.page
+    for p in range(1, total + 1):
+        pdf.page = p
+        fy = pdf.h - 15
+        pdf.set_draw_color(*BORDER)
+        pdf.set_line_width(0.3)
+        pdf.line(LM, fy, pdf.w - RM, fy)
+        pdf.set_y(fy + 2)
+        pdf.set_font(font, "", 7.5)
+        pdf.set_text_color(*GRAY_TEXT)
+        pdf.set_x(LM)
+        pdf.cell(PW / 3, 5, clean(f"Permit: {permit_no}"))
+        pdf.cell(PW / 3, 5, clean("HPCL — Standard Operating Procedure"), align="C")
+        pdf.set_x(pdf.w - RM - PW / 3)
+        pdf.cell(PW / 3, 5, f"Page {p} of {total}", align="R")
 
     return bytes(pdf.output())

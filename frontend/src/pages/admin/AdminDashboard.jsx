@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { GoogleMap, Marker } from '@react-google-maps/api'
 import { useGoogleMaps } from '../../context/GoogleMapsContext'
 import JSADetailModal from '../../components/JSADetailModal'
@@ -1219,6 +1220,7 @@ function EditJSAModal({ jsaRecord, onClose, onSaved }) {
 }
 
 export default function AdminDashboard({ admin, onLogout }) {
+  const navigate = useNavigate()
   const [users, setUsers] = useState([])
   const [orders, setOrders] = useState([])
   const [permits, setPermits] = useState([])
@@ -1384,6 +1386,13 @@ export default function AdminDashboard({ admin, onLogout }) {
         <h1>Admin Panel</h1>
         <div className="admin-navbar-right">
           <span className="admin-username">{admin.username}</span>
+          <button className="admin-btn-outline admin-btn-analytics" onClick={() => navigate('/admin/analytics')}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
+              strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '5px', verticalAlign: 'middle' }}>
+              <path d="M3 3v18h18" /><path d="M18 9l-5 5-2-2-5 5" />
+            </svg>
+            Analytics
+          </button>
           <button className="admin-btn-outline" onClick={() => setShowCreds(!showCreds)}>
             Change Credentials
           </button>

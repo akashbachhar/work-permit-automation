@@ -11,9 +11,12 @@
   },
   "dependencies": {
     "@react-google-maps/api": "^2.20.8",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-router-dom": "^7.18.0"
+    "react-router-dom": "^7.18.0",
+    "recharts": "^3.9.1"
   },
   "devDependencies": {
     "@types/react": "^19.2.17",

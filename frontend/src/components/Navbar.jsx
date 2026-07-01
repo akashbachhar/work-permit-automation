@@ -44,6 +44,13 @@ export default function Navbar() {
                   </div>
                 )}
               </div>
+              <Link to="/analytics" className="btn-nav btn-nav-analytics">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
+                  strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '5px', verticalAlign: 'middle' }}>
+                  <path d="M3 3v18h18" /><path d="M18 9l-5 5-2-2-5 5" />
+                </svg>
+                Analytics
+              </Link>
               <span className="navbar-email">{user.name}</span>
               <button className="btn-nav" onClick={logout}>Logout</button>
             </>

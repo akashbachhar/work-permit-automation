@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
+import { Routes, Route } from 'react-router-dom'
 import AdminLogin from './AdminLogin'
 import AdminDashboard from './AdminDashboard'
+import AdminAnalyticsPage from './AdminAnalyticsPage'
 
 export default function AdminPage() {
   const [admin, setAdmin] = useState(null)
@@ -15,8 +17,12 @@ export default function AdminPage() {
   }, [])
 
   if (loading) return <div className="loading">Loading...</div>
-
   if (!admin) return <AdminLogin onLogin={setAdmin} />
 
-  return <AdminDashboard admin={admin} onLogout={() => setAdmin(null)} />
+  return (
+    <Routes>
+      <Route index element={<AdminDashboard admin={admin} onLogout={() => setAdmin(null)} />} />
+      <Route path="analytics" element={<AdminAnalyticsPage />} />
+    </Routes>
+  )
 }

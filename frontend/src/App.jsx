@@ -6,6 +6,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
+import AnalyticsPage from './pages/AnalyticsPage'
 import AdminPage from './pages/admin/AdminPage'
 import './App.css'
 
@@ -47,6 +48,14 @@ function AppLayout() {
             element={
               <ProtectedRoute>
                 <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analytics"
+            element={
+              <ProtectedRoute>
+                <AnalyticsPage apiEndpoint="/api/analytics/summary" />
               </ProtectedRoute>
             }
           />
